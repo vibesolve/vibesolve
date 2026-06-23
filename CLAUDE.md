@@ -1,6 +1,11 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. See also [AGENTS.md](AGENTS.md) — a guide for AI coding agents covering the same pipeline plus generated-project conventions and debugging shortcuts; keep the two in sync when architecture changes.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Working conventions
+
+- **Never commit without explicit user approval.** Always show the proposed commit(s) and wait for the user to say "go ahead" before running `git commit`.
+ See also [AGENTS.md](AGENTS.md) — a guide for AI coding agents covering the same pipeline plus generated-project conventions and debugging shortcuts; keep the two in sync when architecture changes.
 
 ## Overview
 

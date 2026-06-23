@@ -1,10 +1,12 @@
+<p align="center">
+  <img src="vs-icon.svg" alt="VibeSolve" width="120" />
+</p>
+
 # VibeSolve
 
 Describe an optimization problem in plain English. Get a complete, runnable [Timefold Solver](https://timefold.ai/) project (Java domain model, constraints, REST API, tests, and solver config), automatically validated by Docker.
 
-```
-I have a school timetabling problem with teachers, classes, lessons, rooms and a 1-week grid. Schedule all lessons such that no teacher teaches 2 lessons at the same time, no room hosts 2 lessons at the same time, and lessons for the same class group are spread across the week (1 per day).
-```
+> I have a school timetabling problem with teachers, classes, lessons, rooms and a 1-week grid. Schedule all lessons such that no teacher teaches 2 lessons at the same time, no room hosts 2 lessons at the same time, and lessons for the same class group are spread across the week (1 per day).
 
 → Ready-to-build Quarkus + Timefold Solver Maven project.
 
