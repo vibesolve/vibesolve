@@ -1,0 +1,29 @@
+# Validation temp files
+.validation_temp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+.env.local
+
+# Package build artifacts
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Logs and results
+logs/
+results/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Skills
+.agents/
+.hallmark/
