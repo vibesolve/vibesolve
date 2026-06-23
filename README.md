@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="vs-icon.svg" alt="VibeSolve" width="120" />
+</p>
+
 # VibeSolve
 
 Describe an optimization problem in plain English. Get a complete, runnable [Timefold Solver](https://timefold.ai/) project (Java domain model, constraints, REST API, tests, and solver config), automatically validated by Docker.
