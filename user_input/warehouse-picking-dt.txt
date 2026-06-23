@@ -1,0 +1,59 @@
+I run the fulfillment floor at an e-commerce warehouse and need to plan daily pick routes for a team of warehouse pickers.
+
+Warehouse layout:
+- Three temperature zones:
+  - Ambient: 20 aisles, standard storage for most products
+  - Chilled (2-8°C): 6 aisles, dairy, fresh food, pharmaceuticals
+  - Bulk: 8 aisles, oversized items stored on pallets rather than shelves
+- Each aisle has shelving on both sides, with bin locations identified by zone-aisle-shelf-position codes (e.g. AMB-04-C-12)
+- Aisle width varies: ambient aisles are one-way (pickers must travel the full length), bulk aisles are two-way
+- There is a single packing station at the front of the warehouse where all routes start and end
+- Travel time between bins depends on zone distance and aisle layout — the chilled zone is at the far end, roughly 3 minutes walk from packing
+- There is a doorway between ambient and chilled that requires badge scan and takes about 20 seconds to pass through
+- Bulk zone requires a different cart type (flatbed), so a picker doing bulk items makes a separate trip from ambient/chilled items
+
+Orders and items:
+- Approximately 200 customer orders per day, each containing 1 to 15 items
+- Each item is mapped to a specific bin location in a specific zone
+- Items have a weight (ranging from 50g to 12kg) and dimensions
+- Some items are flagged as fragile (glassware, electronics)
+- Some items are flagged as hazardous (cleaning chemicals, batteries) and cannot be on the same cart as food items
+- Each order has a priority tier:
+  - Express: must be picked by 10:00 AM
+  - Standard: must be picked by 14:00
+  - Economy: must be picked by 18:00
+- Each order has a packing type: standard box, insulated box (for chilled items), or oversized (for bulk)
+
+Pickers:
+- Team of 12 pickers working a single 8-hour shift (8:00-16:00)
+- Each picker has a standard cart with a weight capacity of 25 kg and space for at most 30 items per trip
+- Flatbed carts for bulk zone have a weight capacity of 80 kg but only hold 8 oversized items
+- Pickers have different walking speeds based on experience level:
+  - New hires (< 3 months): ~30% slower
+  - Experienced: baseline speed
+  - Veterans (> 2 years): ~10% faster due to route familiarity
+- A picker makes multiple trips per shift, returning to the packing station after each trip
+- Each picker is trained for all zones, but only 4 pickers are certified to operate the powered pallet jack needed for heavy bulk items (> 30 kg)
+
+Rules:
+- Orders should not be split across multiple pickers when they fit on a single cart
+- Large orders that exceed one cart load must be split, but all splits should go to the same picker across consecutive trips
+- Chilled zone picks must be completed within 15 minutes of entering the zone — if a route has chilled items, those are picked last right before returning to packing, so they spend minimum time at ambient temperature
+- Fragile items must be picked last in the route so they sit on top of the cart and aren't crushed
+- Hazardous items and food items cannot be on the same cart in the same trip
+- A picker cannot carry items from more than 2 zones in a single trip (no ambient+chilled+bulk)
+- Bulk items must be picked on a flatbed cart in a separate trip from ambient/chilled items
+- Heavy bulk items (> 30 kg) can only be picked by pallet-jack-certified pickers
+- Each picker gets a mandatory 15-minute break after every 90 minutes of continuous picking, and a 30-minute lunch break between 11:30 and 13:00
+- Express orders take priority — they must be assigned to pickers starting their first or second trip of the day
+
+Goals (in priority order):
+1. All orders picked before their priority tier cutoff time (mandatory)
+2. All cart capacity and weight limits respected (mandatory)
+3. Cold chain integrity maintained — chilled items within 15-minute ambient exposure (mandatory)
+4. Hazardous/food separation respected (mandatory)
+5. Minimize total walking distance across all pickers (desirable)
+6. Balance workload (total items and total trips) evenly across the team (desirable)
+7. Minimize the total number of trips needed (desirable)
+8. Keep full orders together on one cart when possible (desirable)
+9. Assign bulk-heavy waves to certified pickers early in the shift when they're fresh (desirable)

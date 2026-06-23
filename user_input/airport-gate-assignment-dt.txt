@@ -1,0 +1,61 @@
+I work in operations at a mid-sized international airport and need to assign arriving and departing flights to gates throughout the day.
+
+Airport layout:
+- 32 gates total, split across 3 terminals:
+  - Terminal A (gates A1-A12): domestic flights only, all gates have jet bridges
+  - Terminal B (gates B1-B12): domestic and international, all gates have jet bridges, gates B9-B12 have customs/immigration access for international arrivals
+  - Terminal C (gates C1-C8): regional/commuter flights, mix of jet bridge gates (C1-C4) and remote stand gates (C5-C8) requiring bus transfer
+- Gates have size categories based on the largest aircraft they can accommodate:
+  - Small: regional jets and turboprops (e.g. CRJ-200, ATR-72) — gates C1-C8
+  - Medium: narrow-body jets (e.g. A320, B737) — gates A1-A12, B1-B8
+  - Large: wide-body jets (e.g. A330, B777, B787) — gates B9-B12 only
+- Adjacent gates share ramp space. When a large aircraft is parked at certain gates, the neighboring gate cannot be used simultaneously. The specific conflict pairs are: (B9,B10), (B11,B12), (A1,A2), (A11,A12)
+
+Flights:
+- Approximately 180 flights per day (90 arrivals, 90 departures), but arrivals and departures are paired — most aircraft arrive and then depart as a different flight number
+- Each flight has: airline, flight number, aircraft type, scheduled arrival time, scheduled departure time, origin/destination, domestic or international flag, estimated passenger count
+- Turnaround time between arrival and departure varies by aircraft type:
+  - Regional: minimum 25 minutes
+  - Narrow-body: minimum 35 minutes
+  - Wide-body: minimum 60 minutes
+- During turnaround, the gate is occupied (cleaning, refueling, catering, boarding)
+- Some flights are overnight stays — aircraft arrives in the evening and departs next morning. These should be assigned remote stands (C5-C8) when possible to free up jet bridge gates
+
+Airlines and preferences:
+- 6 airlines operate at this airport
+- Each airline has a preferred terminal and set of gates where their ground crew and equipment are stationed
+- Airline A is the hub carrier and operates 60% of flights — they strongly prefer Terminal A and gates B1-B8
+- Low-cost carriers prefer remote stands (cheaper fees) when their aircraft type allows it
+- Codeshare flights (operated by one airline, sold by another) should be at a gate that has signage for the operating airline
+
+Passenger connections:
+- About 20% of passengers are connecting between flights
+- When two flights have significant connecting passenger flow (provided as a connection list with passenger counts), the gates should be close together
+- "Close" means same terminal or adjacent gates — transferring between Terminal A and Terminal C is the worst case (15-minute walk)
+- International-to-domestic connections must go through Terminal B gates B9-B12 for arrival (customs) and then transfer to Terminal A for the domestic departure
+- Minimum connection time: 30 minutes for domestic-to-domestic, 60 minutes for international-to-domestic. Gate assignment cannot make a legal connection impossible by placing gates too far apart given the walk time
+
+Gate occupancy:
+- A gate can only hold one aircraft at a time
+- Buffer time between consecutive aircraft at the same gate: at least 10 minutes after one aircraft pushes back before the next can begin docking
+- No aircraft may be assigned to a gate where its wingspan exceeds the gate's size category
+- If an aircraft arrives early or late (delay), the gate must still be available — schedule should have enough buffer to handle this
+
+Special rules:
+- VIP flights (government, charter) must be assigned to specific gates (A1 or A2) regardless of airline preference
+- Flights with passengers requiring special assistance (wheelchair, medical) should be at jet bridge gates, not remote stands
+- Cargo-heavy flights (belly cargo) should be at gates with direct ramp access to the cargo facility — gates A10-A12 and B9-B12
+- Red-eye arrivals before 6:00 AM should use gates farthest from residential areas (Terminal C) for noise reasons
+- During peak hours (7:00-9:00 AM and 5:00-8:00 PM), no gate should sit empty for more than 45 minutes — maximize throughput
+
+Goals (in priority order):
+1. Every flight must be assigned exactly one gate that fits its aircraft type (mandatory)
+2. No two aircraft at the same gate at the same time, respecting buffer times (mandatory)
+3. International flights must use gates with customs access (mandatory)
+4. Adjacent-gate conflicts for large aircraft must be respected (mandatory)
+5. Minimum turnaround times must be met (mandatory)
+6. Minimize total passenger walking distance for connections (desirable)
+7. Assign airlines to their preferred gates and terminals (desirable)
+8. Keep overnight aircraft on remote stands (desirable)
+9. Maximize gate utilization during peak hours (desirable)
+10. Minimize the number of bus transfers (remote stand assignments) for passenger flights (desirable)

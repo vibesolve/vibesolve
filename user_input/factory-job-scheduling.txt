@@ -1,0 +1,1 @@
+I manage a small manufacturing plant where products go through several processing steps on different machines. Each job has a fixed order of operations and processing times, and machines can only handle one job at a time. The objective is to create a feasible production schedule that finishes all jobs as early as possible without unnecessary machine idle time.

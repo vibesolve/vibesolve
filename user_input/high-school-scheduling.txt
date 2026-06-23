@@ -1,0 +1,1 @@
+I need to build a weekly timetable for a high school. Classes must be assigned to periods and rooms, and teachers can only teach when they are available. Some subjects require specific rooms, like labs or gyms. The goal is to avoid teacher conflicts and minimize gaps in students’ daily schedules.

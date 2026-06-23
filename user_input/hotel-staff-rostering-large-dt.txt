@@ -1,0 +1,101 @@
+I manage staffing for a large hotel with around 120 employees across 6 departments. I need to build a 4-week rolling schedule that assigns each employee to shifts.
+
+Departments and shift patterns:
+
+Front desk:
+- Three 8-hour shifts: morning (6:00-14:00), afternoon (14:00-22:00), night (22:00-6:00)
+- Minimum staffing: 3 morning, 3 afternoon, 2 night on weekdays; 4 morning, 4 afternoon, 2 night on weekends
+- Preferred staffing: +1 on each shift above minimums
+- At least one staff member on each shift must speak a second language (we serve international guests)
+
+Housekeeping:
+- Two shifts: early (7:00-15:00), late (11:00-19:00)
+- Minimum staffing: 8 early + 4 late on weekdays, 10 early + 6 late on weekends and holidays
+- Preferred: +2 early on checkout-heavy days (Sundays, Mondays)
+- Housekeepers are organized into floor teams of 2-3 — team members should be on the same shift when possible
+- VIP floor assignments require at least one employee with VIP training certification per team
+
+Food & beverage (F&B):
+- Four shifts: breakfast (5:00-13:00), lunch (10:00-18:00), dinner (16:00-24:00), split shift (10:00-14:00 then 18:00-22:00)
+- Minimum staffing: breakfast 4, lunch 5, dinner 6 on weekdays; all +2 on weekends; all +3 on holidays
+- Split shift is used to cover both lunch and dinner rush — counts as a single shift but the gap (14:00-18:00) is unpaid
+- At least one employee on breakfast shift must have food safety certification
+- At least one employee on dinner shift must be bartender-certified
+- F&B employees should not work breakfast shift the day after a dinner shift (only 5 hours between shifts)
+
+Maintenance:
+- Day shift (8:00-16:00) and on-call night shift (16:00-8:00, 16 hours with sleep allowed)
+- Minimum: 3 day, 1 on-call on weekdays; 2 day, 1 on-call on weekends
+- On-call must include at least one electrician and one general technician
+- On-call shifts count as 8 working hours (not 16) for weekly hour calculations
+- Maintenance staff cannot do on-call more than 2 times per week
+
+Spa/wellness:
+- Single shift (9:00-21:00) with a mandatory 1-hour break between 13:00 and 15:00
+- Minimum: 3 staff (at least 1 licensed massage therapist, 1 aesthetician, 1 receptionist)
+- Weekend minimum: 4 staff (at least 2 therapists)
+- Spa staff work a max of 4 days per week due to physical demands
+
+Events/banquets:
+- Variable shifts depending on the bookings calendar, typically 6-10 hours
+- Events are known 1-2 weeks in advance with specific staffing needs (e.g. "Wedding reception Saturday 16:00-24:00, need 12 staff including 1 supervisor")
+- If an event needs more than 8 staff, a supervisor must be assigned
+- Events shifts must be staffed at least 48 hours before the event starts
+- Events staff frequently come from F&B cross-training pool
+
+Employees:
+- Each employee has a primary department and role/skill set
+- About 30 employees are cross-trained and can fill shifts in one secondary department:
+  - F&B ↔ Events is the most common cross-training (18 employees)
+  - Front desk ↔ Spa receptionist (4 employees)
+  - Housekeeping ↔ Maintenance general (8 employees)
+- Each employee has contracted weekly hours: 20h (part-time), 30h (three-quarter), or 40h (full-time)
+- Part-time employees have specific available days (e.g. "Mon, Wed, Fri only")
+- Seniority levels: junior (< 1 year), mid (1-5 years), senior (> 5 years)
+- Each employee can submit:
+  - Preferred days off (soft, honored when possible)
+  - Mandatory days off for medical or personal reasons (hard, must be honored)
+  - Shift preferences: a ranked list of which shifts they prefer (desirable)
+- Some employees have been flagged:
+  - "Nearing retirement" — should not be assigned night shifts or physically demanding shifts
+  - "Light duty" (injury recovery) — limited to front desk or spa receptionist, max 6 hours/day
+  - "New hire" (first month) — must be paired with a senior employee on at least half their shifts
+
+Shift assignment rules:
+- An employee cannot work two shifts in the same day
+- After a night shift (ending at 6:00 or later), at least 12 hours off before the next shift
+- After any shift ending at 22:00 or later, the next shift cannot start before 8:00
+- After a dinner shift ending at 24:00, the next shift cannot start before 10:00
+- No more than 6 consecutive working days without at least 1 rest day
+- No more than 3 consecutive night shifts
+- Every employee must have at least 2 full weekends off per 4-week period (full weekend = both Saturday and Sunday off)
+- Contracted hours must be met within a tolerance of +/- 4 hours over each 4-week cycle
+- Overtime beyond contracted hours is allowed but capped at 10 hours per employee per month
+- Cross-department assignments cannot exceed 3 per employee per month
+- An employee cannot be cross-assigned to a department they haven't been trained for
+- Employees on light duty cannot exceed 30 hours per week regardless of contract
+
+Fairness rules:
+- Unpopular shifts (nights, holidays, F&B breakfast, weekend housekeeping early) are tracked with a fairness score
+- The fairness score carries over month to month — employees who did more unpopular shifts last month should do fewer this month
+- Night shifts specifically should be distributed so no employee does more than 2 more night shifts than any other eligible employee in the same department over a 4-week period
+- Overtime hours should be distributed evenly across eligible employees, not concentrated
+- Holiday shifts earn 1.5x fairness credit (so an employee doing a holiday night shift gets more fairness relief next month)
+- Weekend shifts should be distributed so every employee gets roughly the same number of weekend days worked
+
+Goals (in priority order):
+1. Cover all minimum staffing requirements in every department and shift (mandatory)
+2. Respect all mandatory days off, medical restrictions, and light-duty limitations (mandatory)
+3. Respect all legal rest requirements: 12h after night, no 6+ consecutive days, etc. (mandatory)
+4. Meet contracted hours within tolerance for every employee (mandatory)
+5. Respect overtime cap of 10h/month (mandatory)
+6. Staff events at least 48 hours in advance with required roles (mandatory)
+7. Maximize preferred staffing levels across all departments (desirable)
+8. Distribute unpopular shifts fairly using the rolling fairness score (desirable)
+9. Distribute overtime hours evenly (desirable)
+10. Honor soft day-off preferences (desirable)
+11. Honor shift preferences (desirable)
+12. Minimize cross-department assignments (desirable)
+13. Keep housekeeping floor teams together on the same shift (desirable)
+14. Pair new hires with senior employees (desirable)
+15. Avoid assigning nearing-retirement employees to night or physical shifts (desirable)

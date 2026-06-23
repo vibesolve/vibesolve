@@ -1,0 +1,1 @@
+I manage a customer support call center that operates seven days a week. Each day is divided into multiple shifts with different staffing requirements. Agents have varying availability and some prefer specific shift types. The schedule should cover demand while spreading unpopular shifts fairly and avoiding overly fragmented work weeks.

@@ -1,0 +1,1 @@
+I work for a city sanitation department and need to plan garbage truck routes. Each neighborhood must be serviced on a specific day, and trucks have limited capacity before needing to unload. All routes start and end at the depot. I want routes that respect capacity limits and keep total driving time and distance as low as possible.

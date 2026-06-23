@@ -1,0 +1,120 @@
+I work for a mid-sized city transit authority and need to build daily driver and bus schedules for a network of 18 bus routes.
+
+Network topology:
+- 18 routes serving roughly 400 stops across the city
+- Each route has a defined stop sequence with known travel times between consecutive stops
+- 5 routes are classified as "major" (high ridership corridors), 8 as "standard", and 5 as "minor" (suburban feeders)
+- 3 of the minor routes are designated school routes with extra service on school days
+- Routes operate from approximately 5:00 AM to midnight, but minor routes end service at 10:00 PM
+- Some routes share segments — for example route 4 and route 7 overlap for 6 stops downtown. Overlapping segments should not have two buses from different routes arriving at the same stop within 2 minutes of each other (passenger confusion)
+- There are 12 designated transfer hubs where passengers commonly switch between routes. Arrival times at hubs should be staggered to allow 3-5 minute transfer windows between connecting routes
+
+Frequency by time of day:
+- Peak hours (7:00-9:00 AM and 5:00-7:00 PM):
+  - Major routes: a bus every 8 minutes
+  - Standard routes: every 12 minutes
+  - Minor routes: every 20 minutes
+- Midday (9:00 AM - 5:00 PM, excluding peak):
+  - Major: every 12 minutes
+  - Standard: every 20 minutes
+  - Minor: every 30 minutes
+- Evening (7:00 PM - 10:00 PM):
+  - Major: every 15 minutes
+  - Standard: every 25 minutes
+  - Minor: every 30 minutes (then service ends)
+- Late night (10:00 PM - midnight):
+  - Major: every 30 minutes
+  - Standard: every 45 minutes
+- The first and last trip of each route have fixed departure times published in the timetable — these cannot change
+- School routes get 2 additional trips: one at 7:30 AM and one at 3:30 PM on weekdays during the school year. These are on top of the normal frequency
+
+Fleet:
+- 85 buses across 3 depots:
+  - Depot A (north): capacity 40 buses, located near the start of routes 1-6
+  - Depot B (central): capacity 25 buses, located downtown near routes 7-12
+  - Depot C (south): capacity 20 buses, located near routes 13-18
+- Three bus types:
+  - Standard (50 buses): capacity 45 passengers, diesel, all depots have them
+  - Articulated (15 buses): capacity 80 passengers, diesel, only at depots A and B, requires special driver certification
+  - Electric (20 buses): capacity 40 passengers, battery range 180 km, located at all depots
+- Each bus is assigned to a home depot and must start and end its service day there
+- Buses have an odometer and scheduled maintenance: some buses have pre-scheduled maintenance on specific days and are completely unavailable. On average, 5-8 buses are out for maintenance on any given day
+- Electric buses must not be dispatched if their range would be insufficient to complete the assigned block of trips and return to depot
+
+Electric bus specifics:
+- Full charge takes 45 minutes and gives 180 km range
+- Partial charge is allowed: 20 minutes gives roughly 80 km
+- Charger availability: depot A has 4 chargers, depot B has 3, depot C has 2
+- A charger can only serve one bus at a time
+- If multiple electric buses need charging at the same time, they must queue — the schedule should avoid overloading charger capacity
+- At least 60% of trips on route segments passing through the city center low-emission zone must be served by electric buses (regulatory requirement)
+- Electric buses should be prioritized for routes that loop back near their depot, so mid-day charging is feasible
+- In winter months, electric bus range drops to roughly 140 km — the schedule should account for seasonal range reduction
+
+Drivers:
+- About 110 drivers total
+- Each driver has:
+  - A home depot preference (where they prefer to start/end their shift)
+  - License qualifications: all can drive standard, ~40 have articulated certification, ~30 have EV training
+  - A seniority level: trainee (first 4 weeks), junior (< 2 years), senior (2+ years)
+- Trainee drivers must be paired with a mentor driver — they cannot operate a bus alone. The mentor must be a senior driver on the same route, driving the bus immediately ahead or behind in the schedule so they can radio for help
+- Some drivers have medical restrictions: 6 drivers cannot work shifts starting before 7:00 AM (sleep disorder accommodation), 3 drivers are limited to 7-hour shifts
+
+Driver labor rules:
+- Maximum shift length: 9 hours including all breaks and deadheading
+- After 4.5 hours of continuous driving, a mandatory 30-minute break is required
+  - Breaks can only happen at designated relief points: the 12 transfer hubs, any route terminus, or at depot
+  - If no relief point falls naturally at the 4.5-hour mark, the schedule must route the driver to one
+- Meal break: 45 minutes unpaid, must occur between the 4th and 6th hour of the shift
+  - Meal breaks must happen at a location with facilities (depot or one of 5 designated hubs with a break room)
+- Split shifts are allowed: a morning block (e.g. 5:30-9:30) and an evening block (e.g. 16:00-20:00) with a 3+ hour unpaid gap
+  - No driver may have more than 2 split shifts per week
+  - During the gap, the driver is not on the clock and the bus is available for another driver
+- No more than 5 consecutive working days, then at least 1 day off
+- At least 11 hours between the end of one shift and the start of the next
+- Weekly driving hours (Mon-Sun) must not exceed 45 hours
+- A driver must stay with the same bus for their entire continuous driving block (no swapping buses mid-block, though they can swap at the start of a new block after a meal break)
+
+Trip and route rules:
+- Every scheduled trip on every route must be covered by exactly one bus and one driver
+- A bus can serve trips on different routes throughout the day, but when transitioning between routes:
+  - Minimum 5-minute layover at the transfer point for schedule recovery
+  - The transition must happen at a stop that both routes share, or the bus must deadhead
+- On high-frequency routes (headway ≤ 10 min), buses must maintain headway regularity: actual spacing between consecutive buses cannot deviate more than 20% from the target headway. For example, an 8-minute headway route should have buses spaced 6.4-9.6 minutes apart
+- Express trips (which skip some stops) exist on 3 major routes during peak hours. Two express trips on the same route cannot be scheduled back-to-back — there must be a local trip between them to ensure all stops are served
+
+Accessibility and service quality:
+- Wheelchair-accessible buses (all articulated and 80% of standard fleet are accessible, all electric are accessible) must serve at least 80% of trips on routes passing hospitals, senior centers, and government buildings — there are 7 such routes
+- On school routes, articulated buses are preferred for the 7:30 AM and 3:30 PM extra trips due to high student ridership
+- If a route has a scheduled frequency of every 12 minutes or less, the system should detect and avoid "bus bunching" (two buses arriving at the same stop within 2 minutes)
+
+Deadheading:
+- When a bus needs to travel empty between routes or to/from depot, this is deadheading
+- Deadheading uses fuel/energy, contributes to driver hours, and produces no revenue
+- The schedule should minimize total deadheading distance across the fleet
+- Deadheading during peak hours should be especially minimized as it wastes a bus that could be in service
+
+Depot operations:
+- Each depot has limited parking spaces (see capacity above)
+- At any point during the day, the number of buses physically at a depot (parked, charging, or in maintenance) cannot exceed its capacity
+- Depot A has a wash bay that can process 1 bus at a time, taking 15 minutes — buses returning after a muddy/rainy day should be scheduled for a wash, but this is low priority
+- Shift handoffs happen at depots: when one driver's shift ends and another's begins on the same bus, the handoff takes 5 minutes at the depot
+
+Goals (in priority order):
+1. Every scheduled trip on every route is covered by a qualified driver and an appropriate bus (mandatory)
+2. All driver labor regulations respected: shift length, mandatory breaks, rest between shifts, weekly hours (mandatory)
+3. Bus range and depot assignment rules met — electric buses don't run out of charge, buses return to home depot (mandatory)
+4. No charger overload — number of buses charging simultaneously at a depot doesn't exceed charger count (mandatory)
+5. At least 60% electric coverage in the low-emission zone (mandatory)
+6. Minimum turnaround/layover times between route transitions (mandatory)
+7. School route extra trips covered during school days (mandatory)
+8. Minimize total number of buses needed in service each day (soft — fleet efficiency)
+9. Minimize total deadheading distance (desirable)
+10. Maintain headway regularity on high-frequency routes within 20% tolerance (desirable)
+11. Keep driver shifts close to 8 hours to reduce overtime (desirable)
+12. Fairly rotate split shifts and early-morning starts across drivers using a rolling fairness tracker (desirable)
+13. Assign drivers to their preferred home depot (desirable)
+14. Prefer electric buses in the low-emission zone beyond the 60% minimum (desirable)
+15. Stagger arrivals at transfer hubs for good passenger connections (desirable)
+16. Avoid bus bunching on overlapping route segments (desirable)
+17. Prefer accessible buses on routes serving hospitals and senior centers (desirable)

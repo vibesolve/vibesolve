@@ -1,0 +1,59 @@
+I'm organizing a 3-day technical conference and need to schedule talks into rooms and times.
+
+Venue and time grid:
+- 6 rooms of varying capacity:
+  - Main Hall: 300 seats, has a stage and projector setup for keynotes, also has live-streaming equipment
+  - Room Alpha and Room Beta: 150 seats each, standard projector and microphone setup
+  - Room Gamma, Room Delta, and Room Epsilon: 50 seats each, smaller breakout rooms with whiteboard and screen
+- 7 one-hour times per day:
+  - Morning block: 9:00, 10:00, 11:00
+  - Lunch break: 12:00-13:00 (no talks, but the Main Hall is used for a sponsored lunch session on Day 2)
+  - Afternoon block: 13:00, 14:00, 15:00, 16:00
+- Walking time between rooms: rooms on the same floor are 2 minutes apart, rooms on different floors are 5 minutes apart. Main Hall and Alpha/Beta are on floor 1, Gamma/Delta/Epsilon are on floor 2
+
+Talks and speakers:
+- 80 talks total, each exactly one hour including Q&A
+- Each talk has:
+  - A single speaker (some speakers give 2 talks)
+  - A track: backend, frontend, data, DevOps, security, or career
+  - An expected audience size from pre-registration (ranging from 20 to 280)
+  - A difficulty level: introductory, intermediate, or advanced
+- 3 talks are designated as keynotes — one per day
+- 5 talks are designated as workshops — they must be in small rooms (Gamma/Delta/Epsilon) because they're interactive and need whiteboard access
+- 2 talks require live-streaming and must be in the Main Hall (which has the streaming equipment)
+- 8 speakers have availability restrictions:
+  - 3 speakers are only available on Day 1
+  - 2 speakers can only present in the afternoon (they arrive after lunch)
+  - 3 speakers are only available on Day 2 or Day 3
+- 12 speakers are giving 2 talks each — the rest give 1
+- A few talks have content dependencies: talk B is a follow-up to talk A and should be scheduled after A (same day or later day). There are 6 such dependency pairs
+
+Sponsor requirements:
+- 4 talks are sponsor-funded and must be in a room with at least 150 seats (Alpha, Beta, or Main Hall)
+- Sponsor talks from competing companies (there are 2 competing pairs) must not be in the same time
+- The Day 2 lunch session in Main Hall is a sponsor event, so Main Hall is unavailable during the 12:00-13:00 slot on Day 2
+
+Scheduling rules:
+- No speaker can give two talks in the same time
+- No room can have two talks in the same time
+- Keynotes must be in the Main Hall and in the first slot (9:00) of their respective day
+- A talk's expected audience must not exceed the room's capacity. Ideally, the room should not be more than 2x the expected audience either (avoid 30 people in a 300-seat hall)
+- Two talks from the same track should not be in the same time, so attendees interested in a track can attend all of them
+- Speakers giving 2 talks must have at least one free slot between them for rest and preparation
+- Dependency ordering must be respected: if B depends on A, then A's slot must be strictly earlier
+- Workshops cannot be in the last slot of the day (16:00) because they tend to run over and the venue closes at 17:30
+- No track should have more than 2 talks in a row without a break (to avoid track fatigue)
+
+Goals (in priority order):
+1. All 80 talks scheduled, no room or speaker conflicts (mandatory)
+2. Keynotes in Main Hall at 9:00 (mandatory)
+3. Room capacity not exceeded (mandatory)
+4. Speaker availability respected (mandatory)
+5. Dependency ordering respected (mandatory)
+6. No two same-track talks in the same slot (mandatory)
+7. Place popular talks in adequately sized rooms (desirable)
+8. Minimize room size waste (don't put 30 people in a 300-seat room) (desirable)
+9. Spread each track's talks across different days, not just different slots (desirable)
+10. When consecutive talks in the same track exist, prefer them in the same room or same floor to reduce attendee walking (desirable)
+11. Honor speaker time-of-day preferences when possible (desirable)
+12. Place introductory talks earlier in the day and advanced talks later, when possible (desirable)

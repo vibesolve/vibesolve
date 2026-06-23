@@ -1,0 +1,1 @@
+I have a school timetabling problem with teachers, classes, lessons, rooms and a 1 week grid. Your task is to schedule all lessons on a grid such that no teachers teach 2 lessons at the same time, no room has 2 lessons at the same time, and lessons of the same groups should be spread out across the week, meaning 1 on each day.

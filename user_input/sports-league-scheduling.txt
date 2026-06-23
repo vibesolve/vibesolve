@@ -1,0 +1,1 @@
+I’m organizing a regional amateur sports league and need to schedule matches over a season. Each team should play every other team a fixed number of times. There are limited venues and time slots, and teams have constraints on availability. The schedule should minimize long travel distances and avoid too many consecutive away games.

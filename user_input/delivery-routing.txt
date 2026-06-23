@@ -1,0 +1,1 @@
+I run a local grocery delivery service and need to plan daily routes for a small fleet of vans. Each customer has a delivery time window and an estimated service duration. Vans all start and end at the depot and have limited capacity. I want routes that respect time windows and capacities while keeping total driving distance reasonably low.

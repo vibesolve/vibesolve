@@ -1,0 +1,1 @@
+I oversee multiple construction sites running in parallel and need to assign crews to daily tasks. Each task requires certain skills and has a fixed duration, and crews can only work at one site per day. The objective is to complete all tasks within deadlines while minimizing idle days for crews.
