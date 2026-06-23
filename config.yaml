@@ -1,0 +1,66 @@
+# VibeSolve - configuration file
+#
+# Usage:
+#   vibesolve run --config config.yaml
+#   vibesolve batch --config config.yaml
+#
+# Priority (highest → lowest):
+#   1. CLI flags              (e.g. --provider=claude, --reasoning-effort=high)
+#   2. Environment variables  (e.g. PROVIDER=claude, MODELS__FIXER=gpt-5)
+#   3. This YAML file
+#   4. Built-in defaults
+
+# LLM provider: openai | claude
+provider: openai
+
+# Per-agent reasoning effort (applies to whichever provider is active).
+# Allowed values per agent: low | medium | high
+# Override every agent at once from the CLI with --reasoning-effort.
+efforts:
+  parser:                  low
+  model_builder:           low
+  constraint_builder:      low
+  io:                      low
+  integrator:              low
+  reviewer:                medium
+  fixer:                   high
+  user_validator_explain:  low
+  user_validator_update:   low
+
+# Per-agent model overrides for OpenAI (used when provider=openai).
+models:
+  parser:                  gpt-5-mini
+  model_builder:           gpt-5-mini
+  constraint_builder:      gpt-5-mini
+  io:                      gpt-5-mini
+  integrator:              gpt-5-mini
+  reviewer:                gpt-5-mini
+  fixer:                   gpt-5-mini
+  user_validator_explain:  gpt-5-mini
+  user_validator_update:   gpt-5-mini
+
+# Per-agent model overrides for Claude (used when provider=claude).
+claude_models:
+  parser:             claude-haiku-4-5-20251001
+  model_builder:      claude-haiku-4-5-20251001
+  constraint_builder: claude-haiku-4-5-20251001
+  io:                 claude-haiku-4-5-20251001
+  integrator:         claude-haiku-4-5-20251001
+  reviewer:           claude-sonnet-4-6
+  fixer:              claude-sonnet-4-6
+  user_validator_explain:  claude-haiku-4-5-20251001
+  user_validator_update:   claude-haiku-4-5-20251001
+
+# --- General runtime settings ---
+
+# Enable OpenAI prompt caching (store=True on Responses API).
+enable_caching: true
+
+# Run Docker validation (mvn compile + mvn exec:java) after generation.
+enable_docker_validation: true
+
+# Maximum number of Fixer agent iterations per problem before giving up.
+max_fix_iterations: 10
+
+# Default number of parallel workers for vibesolve batch.
+default_workers: 3
