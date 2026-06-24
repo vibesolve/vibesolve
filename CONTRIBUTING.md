@@ -13,7 +13,7 @@ Thank you for your interest in contributing! This document covers how to set up 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/amine-athmani/vibesolve.git
+git clone http://github.com/vibesolve/vibesolve.git
 cd vibesolve
 
 # 2. Create and activate the environment
@@ -120,7 +120,7 @@ Agent prompts live in `src/vibesolve/prompts/*.txt`. When modifying a prompt:
 
 ## Reporting Issues
 
-Please use [GitHub Issues](https://github.com/amine-athmani/vibesolve/issues) to report bugs or request features. Include:
+Please use [GitHub Issues](http://github.com/vibesolve/vibesolve/issues) to report bugs or request features. Include:
 
 - The problem input file (or a minimal reproduction)
 - The full error output from the pipeline log (`logs/run_<timestamp>/pipeline.log`)

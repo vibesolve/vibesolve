@@ -10,14 +10,6 @@ Describe an optimization problem in plain English. Get a complete, runnable [Tim
 
 → Ready-to-build Quarkus + Timefold Solver Maven project.
 
-## Prerequisites
-
-| Requirement | Notes |
-|---|---|
-| Python 3.11+ | the setup steps use conda |
-| Docker 20+ | for automated validation |
-| LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude` |
-
 ## Setup
 
 ```bash
@@ -86,6 +78,14 @@ Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTIN
 ## Configuration
 
 Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`.
+
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| Python 3.11+ | the setup steps use conda |
+| Docker 20+ | for automated validation |
+| LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude` |
 
 ## How it works
 
