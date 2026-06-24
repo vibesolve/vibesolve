@@ -10,10 +10,18 @@ Describe an optimization problem in plain English. Get a complete, runnable [Tim
 
 → Ready-to-build Quarkus + Timefold Solver Maven project.
 
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| Python 3.11+ | the setup steps use conda |
+| Docker 20+ | for automated validation |
+| LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude` |
+
 ## Setup
 
 ```bash
-git clone https://github.com/amine-athmani/vibesolve.git
+git clone https://github.com/vibesolve/vibesolve.git
 cd vibesolve
 
 conda create -n vibesolve python=3.11 -y
@@ -23,46 +31,61 @@ pip install -e .
 # API key - gitignored, never committed
 cp .env.example .env.local
 # now open .env.local and set OPENAI_API_KEY=sk-...
-
-
 ```
 
 ## Usage
 
-Run a single problem, or batch the whole directory:
+Start Docker on your machine: Linux run `sudo systemctl start docker`, macOS or Windows launch Docker Desktop.
+
+Activate the environment:
 
 ```bash
-conda activate vibesolve   # once per shell
-# start Docker — Linux: sudo systemctl start docker  |  macOS/Windows: launch Docker Desktop
-
-vibesolve run                            # the bundled school timetabling problem example
-vibesolve run user_input/my-problem.txt  # your own problem file
-vibesolve batch                          # every *.txt in user_input/, in parallel
+conda activate vibesolve
 ```
 
-Common flags:
+Solve the bundled school-timetabling example:
 
 ```bash
-vibesolve run --serve                # also emit a Dockerfile + docker-run.sh
-vibesolve run --user-validate        # review the parsed spec before generation
-vibesolve run --no-validation-loop   # skip the validation/fixer loop, useful for testing one shot performance
-vibesolve batch --workers 5          # use N parallel workers (default 3)
+vibesolve run
 ```
 
-Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTING.md#cli-reference). Generated projects land in `results/run_<timestamp>/`; structured logs in `logs/run_<timestamp>/`.
+Solve your own problem file:
+
+```bash
+vibesolve run user_input/my-problem.txt
+```
+
+Solve every `*.txt` in `user_input/`, in parallel:
+
+```bash
+vibesolve batch
+```
+
+### Common flags
+
+Also emit a Dockerfile and `docker-run.sh` next to the generated project:
+
+```bash
+vibesolve run --serve
+```
+
+Review the parsed spec before code generation begins:
+
+```bash
+vibesolve run --user-validate
+```
+
+Run a batch with more parallel workers (default 3):
+
+```bash
+vibesolve batch --workers 5
+```
+
+Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTING.md#cli-reference). Generated projects land in `results/run_<timestamp>/`. Structured logs in `logs/run_<timestamp>/`.
 
 ## Configuration
 
-Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it; API keys stay in `.env.local`.
-
-## Prerequisites
-
-| Requirement | Notes |
-|---|---|
-| Python 3.11+ | via conda recommended |
-| Docker 20+ | for automated validation; skippable with `--no-validation-loop` |
-| LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude` |
-
+Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`.
 
 ## How it works
 
