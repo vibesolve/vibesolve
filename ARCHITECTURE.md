@@ -117,7 +117,7 @@ benchmarking ──────────────────────�
 |---|---|
 | **Delta-based output** | Agents return only changed files, not the full manifest. Saves 60–80% of output tokens on later pipeline stages. |
 | **Typed Pydantic models** | All inter-agent data (`ProblemSpec`, `ProjectManifest`, `Delta`) is validated at parse time — no `dict[str, Any]` at boundaries. |
-| **Provider-agnostic agent caller** | A common `BaseAgentCaller` interface fronts both OpenAI (Responses API) and Anthropic (Messages API); `--provider` selects the implementation. Per-agent reasoning effort maps to OpenAI `reasoning.effort` or the Anthropic extended-thinking budget. |
+| **Provider-agnostic agent caller** | A common `BaseAgentCaller` interface fronts both OpenAI (Responses API) and Anthropic (Messages API); `--provider` selects the implementation. Per-agent reasoning effort maps to OpenAI `reasoning.effort`, or to the Anthropic thinking mode — adaptive thinking (`output_config.effort`) on Sonnet 4.6 / Opus 4.5+ / Fable 5, and `budget_tokens` on older models. |
 | **Structured JSON output** | Agents return guaranteed-valid JSON (OpenAI `json_object` mode), so no regex extraction is needed. |
 | **Persistent Docker container** | The validator container stays running between iterations, keeping the Maven cache warm. Cold start ~30 s; subsequent compiles ~5–10 s. |
 | **Incremental Maven compile** | `mvn clean` is skipped when only `.java` files changed (not `pom.xml`), cutting iteration time significantly. |
