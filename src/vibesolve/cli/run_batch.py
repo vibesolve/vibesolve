@@ -171,7 +171,14 @@ def run(
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             future_to_file = {executor.submit(_run_one, f): f for f in input_files}
             for future in as_completed(future_to_file):
-                result = future.result()
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    # run_problem never raises, but guard the pool layer so one
+                    # worker error cannot drop the rest of the batch's results.
+                    failed = future_to_file[future]
+                    typer.echo(f"[ERROR] worker for {failed.name} raised: {exc}", err=True)
+                    continue
                 results.append(result)
 
                 ts = datetime.now().strftime("%H:%M:%S")
@@ -316,7 +323,10 @@ def run(
         typer.echo("")
         typer.echo(table_text)
         bench_block = f"{sep}\nBENCHMARK\n{sep}\n{table_text}"
-        summary_txt_path.write_text(report_text + "\n\n" + bench_block, encoding="utf-8")
+        # Atomic rewrite so a mid-write failure can't truncate the already-saved summary.
+        _tmp = summary_txt_path.with_name(summary_txt_path.name + ".tmp")
+        _tmp.write_text(report_text + "\n\n" + bench_block, encoding="utf-8")
+        _tmp.replace(summary_txt_path)
         (batch_log_dir / "benchmark-results.csv").write_text(
             benchmark_csv_rows(bench_records, summary.estimated_cost_usd, summary.total_tokens),
             encoding="utf-8",

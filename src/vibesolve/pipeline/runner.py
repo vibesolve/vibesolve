@@ -18,18 +18,7 @@ from vibesolve.models.domain import Delta, ProblemSpec, ProjectManifest
 from vibesolve.models.results import ProblemResult
 from vibesolve.pipeline.user_validator import run_user_validation_loop
 from vibesolve.utils.patch_utils import apply_delta
-from vibesolve.utils import configure_logging, get_run_logger
-
-# Ordered list of (agent_name, input_builder) tuples.
-# input_builder receives (problem_spec, accumulated_manifest) and returns the
-# JSON string to send as the user message. None means use the combined
-# ProblemSpec+ProjectManifest payload (default for all stages after the first).
-_GENERATION_STAGES: list[tuple[str, None]] = [
-    ("model_builder",      None),
-    ("constraint_builder", None),
-    ("io",                 None),
-    ("integrator",         None),
-]
+from vibesolve.utils import get_run_logger
 
 
 def _model_builder_input(spec: ProblemSpec, _manifest: ProjectManifest) -> str:
@@ -112,7 +101,6 @@ def run_problem(
     log_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    configure_logging()
     log = get_run_logger(
         log_path=log_dir / "pipeline.log",
         problem=problem_file,

@@ -20,7 +20,7 @@ class ValidationResult(BaseModel):
 
 class FixAttempt(BaseModel):
     iteration: int
-    error_phase: str
+    error_phase: Literal["compilation", "runtime", "test", "none"]
     error_summary: str
     fixed: bool
 
@@ -33,7 +33,7 @@ class ProblemResult(BaseModel):
     validation_time_s: float
     fix_iterations: int
     error_phases: list[str]
-    final_error_phase: str
+    final_error_phase: Literal["compilation", "runtime", "test", "none", "crash"]
     agent_times: dict[str, float]
     # Per-agent token usage: agent -> {model, input_tokens, cached_input_tokens, output_tokens}
     agent_tokens: dict[str, dict] = Field(default_factory=dict)

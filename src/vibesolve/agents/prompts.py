@@ -19,4 +19,8 @@ def load_prompt(agent: str) -> str:
     filename = _PROMPT_FILES.get(agent)
     if filename is None:
         raise ValueError(f"Unknown agent '{agent}'. Known agents: {list(_PROMPT_FILES)}")
-    return (_PROMPT_DIR / filename).read_text(encoding="utf-8")
+    path = _PROMPT_DIR / filename
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise FileNotFoundError(f"prompt file for agent '{agent}' not found at {path}") from e

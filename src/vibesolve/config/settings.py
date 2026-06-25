@@ -112,7 +112,10 @@ def load_settings(config_file: Path | None = None) -> "AppSettings":
     if resolved is None:
         return AppSettings()
 
-    data: dict = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
+    try:
+        data: dict = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        raise ValueError(f"invalid YAML in config file {resolved}: {e}") from e
 
     # pydantic-settings: env vars always override; we pass yaml values only for
     # fields that are not already set by the environment.

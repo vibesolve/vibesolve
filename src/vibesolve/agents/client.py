@@ -81,9 +81,23 @@ _THINKING_BUDGETS: dict[str, int | None] = {
 }
 
 
+# Models that use adaptive thinking + the `effort` parameter instead of
+# budget_tokens. budget_tokens is deprecated on Sonnet 4.6 / Opus 4.6 and removed
+# (HTTP 400) on Opus 4.7/4.8 and Fable 5, so only older models use the budget path.
+_ADAPTIVE_THINKING_MODELS: frozenset[str] = frozenset({
+    "claude-sonnet-4-6",
+    "claude-opus-4-5",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-fable-5",
+})
+
+
 def _uses_adaptive_thinking(model: str) -> bool:
-    """claude-opus-4-x uses adaptive thinking API (output_config.effort) instead of budget_tokens."""
-    return "opus-4" in model
+    """Whether the model uses adaptive thinking (output_config.effort) rather than
+    the deprecated/removed budget_tokens path."""
+    return any(model == m or model.startswith(m + "-") for m in _ADAPTIVE_THINKING_MODELS)
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +328,7 @@ class AnthropicAgentCaller(BaseAgentCaller):
 # Factory
 # ---------------------------------------------------------------------------
 
-def make_caller_factory(settings: AppSettings) -> Callable:
+def make_caller_factory(settings: AppSettings) -> Callable[[Path, structlog.BoundLogger], BaseAgentCaller]:
     """
     Return a ``(log_dir, log) -> BaseAgentCaller`` factory for the configured provider.
 

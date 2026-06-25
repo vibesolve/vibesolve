@@ -140,8 +140,9 @@ def _sanitize_image_name(project_name: str) -> str:
 def emit_docker_artifacts(project_dir: Path, project_name: str) -> None:
     """
     Write Dockerfile, .dockerignore, and docker-run.sh into project_dir.
-    Caller is responsible for ensuring project_dir exists.
+    Creates project_dir if it does not already exist.
     """
+    project_dir.mkdir(parents=True, exist_ok=True)
     image_name = _sanitize_image_name(project_name)
 
     (project_dir / "Dockerfile").write_text(
