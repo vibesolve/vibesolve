@@ -53,7 +53,8 @@ class DockerContainerPool:
                 container_name=name,
                 log_func=self.log,
             )
-            validator.start_persistent_container()
+            if not validator.start_persistent_container():
+                raise RuntimeError(f"failed to start validator container '{name}'")
             self._queue.put(name)
         self.log(f"Container pool ready: {self._names}")
 

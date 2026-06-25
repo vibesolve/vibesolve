@@ -7,15 +7,13 @@ Maven dependencies are cached in the container between runs.
 
 import io
 import json
-import queue
 import subprocess
 import tarfile
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 
 def default_log(msg: str):
@@ -251,6 +249,17 @@ class DockerValidator:
 
         except subprocess.TimeoutExpired:
             self.log(f"Command timed out after {timeout}s")
+            # The host `docker exec` timed out, but the process inside the container
+            # keeps running (orphaned). Restart the container so the next validation
+            # gets a clean one instead of a wedged / CPU-bound JVM.
+            try:
+                subprocess.run(
+                    ["docker", "restart", "-t", "1", self.container_name],
+                    capture_output=True,
+                    timeout=60,
+                )
+            except Exception:
+                pass
             return False, f"Timed out after {timeout} seconds", -1
 
     def validate(self, manifest: Dict[str, Any], use_clean: bool = True) -> ValidationResult:
@@ -298,16 +307,16 @@ class DockerValidator:
         self.log("-" * 30)
         clean_flag = "clean " if use_clean else ""
         self.log(f"PHASE 1: Compile (mvn {clean_flag}compile)")
-        compile_cmd = f"""cd /project && mvn {clean_flag}compile -q -B 2>&1
+        compile_cmd = f"""cd /project && timeout {self.compile_timeout} mvn {clean_flag}compile -q -B 2>&1
 if [ $? -ne 0 ]; then
     echo "=== ERRORS ==="
-    mvn compile 2>&1 | grep -E "(ERROR|error:|cannot find symbol|does not exist)" | head -20
+    timeout 60 mvn compile 2>&1 | grep -E "(ERROR|error:|cannot find symbol|does not exist)" | head -20
     exit 1
 fi
 echo "BUILD SUCCESS"
 """
         compile_ok, compile_out, compile_code = self.exec_in_container(
-            compile_cmd, self.compile_timeout
+            compile_cmd, self.compile_timeout + 90
         )
 
         if not compile_ok:
@@ -449,74 +458,6 @@ def validate_manifest(manifest: Dict[str, Any],
         )
 
     return validator.validate(manifest)
-
-
-class DockerContainerPool:
-    """
-    Pool of persistent Docker containers for parallel validation.
-
-    N containers are pre-started from the same image. Workers acquire a
-    container from the pool, use it, then release it back. The pool is
-    thread-safe via a queue.Queue.
-
-    Usage:
-        pool = DockerContainerPool(n_containers=4)
-        pool.initialize()
-        with pool.acquire_context() as container_name:
-            validator = DockerValidator(container_name=container_name)
-            result = validator.validate(manifest)
-        pool.shutdown()
-    """
-
-    def __init__(self,
-                 n_containers: int,
-                 image: str = DockerValidator.DOCKER_IMAGE,
-                 log_func: Optional[Callable[[str], None]] = None):
-        self.n_containers = n_containers
-        self.image = image
-        self.log = log_func or default_log
-        self._names: List[str] = [
-            f"timefold-validator-{i}" for i in range(n_containers)
-        ]
-        self._queue: queue.Queue[str] = queue.Queue()
-
-    def initialize(self) -> None:
-        """Start all N containers. Blocks until all are running."""
-        self.log(f"Initializing container pool ({self.n_containers} containers)...")
-        for name in self._names:
-            validator = DockerValidator(
-                docker_image=self.image,
-                container_name=name,
-                log_func=self.log,
-            )
-            validator.start_persistent_container()
-            self._queue.put(name)
-        self.log(f"Container pool ready: {self._names}")
-
-    def acquire(self) -> str:
-        """Blocking acquire — returns a container name when one is free."""
-        return self._queue.get()
-
-    def release(self, name: str) -> None:
-        """Return a container to the pool."""
-        self._queue.put(name)
-
-    @contextmanager
-    def acquire_context(self):
-        """Context manager: acquires a container, yields its name, then releases."""
-        name = self.acquire()
-        try:
-            yield name
-        finally:
-            self.release(name)
-
-    def shutdown(self) -> None:
-        """Stop and remove all numbered containers (image is preserved)."""
-        self.log("Shutting down container pool...")
-        for name in self._names:
-            self.log(f"Removing container '{name}'...")
-            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
-        self.log("Container pool shut down")
 
 
 # CLI

@@ -255,7 +255,12 @@ class FeedbackController:
                         total_files=len(manifest.files),
                     )
                 except Exception as e:
+                    # The fixer call itself failed (not a validation failure). The
+                    # manifest is unchanged, so re-validating it would just burn the
+                    # remaining iterations on the same error. Abort with the current
+                    # (failed) manifest instead.
                     self.log.error("fixer_failed", error=str(e))
+                    return manifest, False
 
         self.log.warning("max_iterations_reached", max_iterations=self.config.max_iterations)
         return manifest, False
