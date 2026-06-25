@@ -41,8 +41,11 @@ def derive_light_columns(result: ProblemResult) -> tuple[bool, bool]:
     if result.success:
         return True, True
     phase = result.final_error_phase or ""
-    compiles = phase != "compilation"
-    solver_runs = phase not in ("compilation", "runtime")
+    # A pipeline crash (or an unset / "none" phase on a failed run) gives no clean
+    # compile/solve signal, so it must not be counted as compiled or solver-ran.
+    not_compiled = ("compilation", "crash", "none", "")
+    compiles = phase not in not_compiled
+    solver_runs = phase not in (*not_compiled, "runtime")
     return compiles, solver_runs
 
 
