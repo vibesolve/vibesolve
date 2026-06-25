@@ -62,6 +62,8 @@ class ClaudeAgentModels(BaseModel):
     integrator: str = "claude-haiku-4-5-20251001"
     reviewer: str = "claude-sonnet-4-6"
     fixer: str = "claude-sonnet-4-6"
+    user_validator_explain: str = "claude-haiku-4-5-20251001"
+    user_validator_update: str = "claude-haiku-4-5-20251001"
 
     def as_dict(self) -> dict[str, str]:
         return self.model_dump()
@@ -124,20 +126,21 @@ def load_settings(config_file: Path | None = None) -> "AppSettings":
         if _env_key(k) not in os.environ
     }
 
-    # The nested model fields are keyed "models" / "claude_models" in YAML;
-    # drop them if the corresponding MODELS__* / CLAUDE_MODELS__* env vars are
-    # present — pydantic-settings will handle those directly.
-    if "models" in filtered and any(
-        k.startswith("MODELS__") for k in os.environ
+    # For nested blocks, drop only the sub-keys that a matching env var overrides
+    # (e.g. MODELS__FIXER) so pydantic-settings supplies those from the environment
+    # while the remaining YAML sub-keys still apply. Popping the whole block would
+    # discard the non-overridden siblings; this preserves env > YAML > default per key.
+    for block_key, prefix in (
+        ("models", "MODELS__"),
+        ("claude_models", "CLAUDE_MODELS__"),
+        ("efforts", "EFFORTS__"),
     ):
-        filtered.pop("models")
-    if "claude_models" in filtered and any(
-        k.startswith("CLAUDE_MODELS__") for k in os.environ
-    ):
-        filtered.pop("claude_models")
-    if "efforts" in filtered and any(
-        k.startswith("EFFORTS__") for k in os.environ
-    ):
-        filtered.pop("efforts")
+        block = filtered.get(block_key)
+        if isinstance(block, dict):
+            kept = {k: v for k, v in block.items() if f"{prefix}{k.upper()}" not in os.environ}
+            if kept:
+                filtered[block_key] = kept
+            else:
+                filtered.pop(block_key, None)
 
     return AppSettings(**filtered)
