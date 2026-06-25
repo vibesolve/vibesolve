@@ -328,11 +328,15 @@ def stage_quarkus_and_endpoints(project_root: Path, port: int, container: str) -
         res["note"] = "no runnable jar after package"
         return res
     _docker_rm(container)
-    _sh(
+    run = _sh(
         ["docker", "run", "-d", "--name", container, "-p", f"{port}:8080",
          "-v", f"{project_root}:/project", "-w", "/project", IMAGE, "java", "-jar", jar],
         timeout=30,
     )
+    if run.returncode != 0:
+        _docker_rm(container)
+        res["note"] = "docker run failed: " + _tail(run.stdout + run.stderr)
+        return res
     try:
         if not _container_started(container):
             res["note"] = "quarkus did not start"
@@ -366,7 +370,11 @@ def stage_docker(project_root: Path, port: int, container: str, image_tag: str) 
     if b.returncode != 0:
         return False, "build failed: " + _tail(b.stdout + b.stderr)
     _docker_rm(container)
-    _sh(["docker", "run", "-d", "--name", container, "-p", f"{port}:8080", image_tag], timeout=30)
+    run = _sh(["docker", "run", "-d", "--name", container, "-p", f"{port}:8080", image_tag], timeout=30)
+    if run.returncode != 0:
+        _docker_rm(container)
+        _sh(["docker", "rmi", "-f", image_tag], timeout=60)
+        return False, "docker run failed: " + _tail(run.stdout + run.stderr)
     try:
         started = _container_started(container)
         logs = _sh(["docker", "logs", container], timeout=20).stdout
@@ -435,6 +443,11 @@ def evaluate_project(
     finally:
         _docker_rm(qk_name)
 
+    # The Quarkus container released this host port; wait for the OS to free it
+    # before the Docker stage binds the same port (avoids a false docker_works=0).
+    deadline = time.time() + 10
+    while not port_is_free(port) and time.time() < deadline:
+        time.sleep(0.5)
     try:
         dok, dnote = stage_docker(project_root, port, dk_name, dk_image)
         rec["docker_works"] = dok
