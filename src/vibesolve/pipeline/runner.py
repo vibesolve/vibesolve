@@ -56,8 +56,13 @@ GENERATION_STAGES = ["model_builder", "constraint_builder", "io", "integrator"]
 
 
 def _write_manifest(manifest: ProjectManifest, out_dir: Path) -> None:
+    root = out_dir.resolve()
     for f in manifest.files:
-        p = out_dir / f.path
+        # Defense-in-depth: FileEntry already validates paths, but never write
+        # outside the project dir even if a path bypassed that validation.
+        p = (out_dir / f.path).resolve()
+        if not p.is_relative_to(root):
+            raise ValueError(f"refusing to write outside project dir: {f.path!r}")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(f.content, encoding="utf-8")
 
