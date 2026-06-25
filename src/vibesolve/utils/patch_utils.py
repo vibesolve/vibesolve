@@ -35,7 +35,7 @@ def apply_delta(base: ProjectManifest, delta: Delta) -> ProjectManifest:
         file_map[f.path] = f
 
     return ProjectManifest(
-        projectName=delta.project_name if delta.project_name is not None else base.project_name,
-        basePackage=delta.base_package if delta.base_package is not None else base.base_package,
+        projectName=delta.project_name if delta.project_name else base.project_name,
+        basePackage=delta.base_package if delta.base_package else base.base_package,
         files=list(file_map.values()),
     )
