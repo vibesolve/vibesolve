@@ -11,6 +11,15 @@ from vibesolve.config.settings import AppSettings
 from vibesolve.models.domain import Delta, FileEntry
 
 
+def _caller(tmp_path, client, settings: AppSettings) -> AnyLLMAgentCaller:
+    return AnyLLMAgentCaller(
+        client=client,
+        settings=settings,
+        log_dir=tmp_path,
+        log=structlog.get_logger(),
+    )
+
+
 def test_make_caller_factory_maps_claude_to_any_llm_anthropic(monkeypatch, tmp_path):
     created: list[tuple[str, str]] = []
 
@@ -62,12 +71,7 @@ def test_openai_call_uses_any_llm_responses_path(tmp_path):
             )
 
     settings = AppSettings(provider="openai", openai_api_key="openai-key")
-    caller = AnyLLMAgentCaller(
-        client=FakeClient(),
-        settings=settings,
-        log_dir=tmp_path,
-        log=structlog.get_logger(),
-    )
+    caller = _caller(tmp_path, FakeClient(), settings)
 
     raw = caller.call("parser", "make a schedule")
 
@@ -105,12 +109,7 @@ def test_claude_call_typed_uses_any_llm_messages_path(tmp_path):
             )
 
     settings = AppSettings(provider="claude", anthropic_api_key="anthropic-key")
-    caller = AnyLLMAgentCaller(
-        client=FakeClient(),
-        settings=settings,
-        log_dir=tmp_path,
-        log=structlog.get_logger(),
-    )
+    caller = _caller(tmp_path, FakeClient(), settings)
 
     delta = caller.call_typed("fixer", "{}", Delta)
 

@@ -16,7 +16,7 @@ import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, TypeVar, cast
 
 import structlog
 from json_repair import repair_json
@@ -102,6 +102,14 @@ def _serialize_parsed(parsed: Any) -> str:
     return json.dumps(parsed)
 
 
+def _first_attr(obj: Any, *names: str) -> Any:
+    for name in names:
+        value = getattr(obj, name, None)
+        if value is not None:
+            return value
+    return None
+
+
 def _content_part_to_text(part: Any) -> str:
     if isinstance(part, str):
         return part
@@ -117,13 +125,26 @@ def _content_part_to_text(part: Any) -> str:
     return ""
 
 
-def _response_text(resp: Any) -> str:
-    """Best-effort text extraction across any-llm response wrappers."""
-    parsed = getattr(resp, "output_parsed", None)
+def _content_to_text(content: Any) -> str | None:
+    if content is None:
+        return None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(_content_part_to_text(part) for part in content)
+    return None
+
+
+def _message_to_text(message: Any) -> str | None:
+    parsed = getattr(message, "parsed", None)
     if parsed is not None:
         return _serialize_parsed(parsed)
+    return _content_to_text(getattr(message, "content", None))
 
-    parsed = getattr(resp, "parsed_output", None)
+
+def _response_text(resp: Any) -> str:
+    """Best-effort text extraction across any-llm response wrappers."""
+    parsed = _first_attr(resp, "output_parsed", "parsed_output")
     if parsed is not None:
         return _serialize_parsed(parsed)
 
@@ -131,31 +152,34 @@ def _response_text(resp: Any) -> str:
     if output_text is not None:
         return str(output_text)
 
-    content = getattr(resp, "content", None)
-    if content is not None:
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            return "".join(_content_part_to_text(part) for part in content)
+    content_text = _content_to_text(getattr(resp, "content", None))
+    if content_text is not None:
+        return content_text
 
     choices = getattr(resp, "choices", None)
     if choices:
         choice = choices[0]
         message = getattr(choice, "message", None)
         if message is not None:
-            parsed = getattr(message, "parsed", None)
-            if parsed is not None:
-                return _serialize_parsed(parsed)
-            message_content = getattr(message, "content", None)
-            if isinstance(message_content, str):
-                return message_content
-            if isinstance(message_content, list):
-                return "".join(_content_part_to_text(part) for part in message_content)
+            message_text = _message_to_text(message)
+            if message_text is not None:
+                return message_text
         text = getattr(choice, "text", None)
         if text is not None:
             return str(text)
 
     return str(resp)
+
+
+def _usage_count(usage: Any, *names: str) -> int:
+    return int(_first_attr(usage, *names) or 0)
+
+
+def _cached_tokens(usage: Any) -> int:
+    details = _first_attr(usage, "input_tokens_details", "prompt_tokens_details")
+    if details is None:
+        return 0
+    return int(getattr(details, "cached_tokens", 0) or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -229,13 +253,28 @@ class AnyLLMAgentCaller(BaseAgentCaller):
 
     def call(self, agent: str, user_message: str) -> str:
         """Call an agent and return its JSON response string."""
-        return self._call_with_retries(agent, user_message, model_type=None)
+        return cast(str, self._call_with_retries(agent, user_message, model_type=None))
 
     def call_typed(self, agent: str, user_message: str, model_type: type[T]) -> T:
         """Call an agent, asking any-llm for structured output where available."""
+        return cast(T, self._call_with_retries(agent, user_message, model_type=model_type))
+
+    def _call_with_retries(
+        self,
+        agent: str,
+        user_message: str,
+        model_type: type[T] | None,
+    ) -> T | str:
         last_exc: Exception | None = None
         for attempt in range(1, 4):
             raw = self._call_once(agent, user_message, model_type=model_type, attempt=attempt)
+
+            if model_type is None:
+                if raw.strip():
+                    return raw
+                self._log.warning("empty_response_retry", agent=agent, attempt=attempt)
+                continue
+
             try:
                 return model_type.model_validate_json(raw)  # type: ignore[attr-defined]
             except Exception as exc:
@@ -246,19 +285,9 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                     attempt=attempt,
                     error=str(exc),
                 )
-        raise last_exc  # type: ignore[misc]
 
-    def _call_with_retries(
-        self,
-        agent: str,
-        user_message: str,
-        model_type: type[Any] | None,
-    ) -> str:
-        for attempt in range(1, 4):
-            content = self._call_once(agent, user_message, model_type=model_type, attempt=attempt)
-            if content.strip():
-                return content
-            self._log.warning("empty_response_retry", agent=agent, attempt=attempt)
+        if last_exc is not None:
+            raise last_exc
         raise ValueError(f"Agent '{agent}' returned an empty response after 3 attempts")
 
     def _call_once(
@@ -367,27 +396,12 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         if usage is None:
             return
 
-        input_tokens = (
-            getattr(usage, "input_tokens", None)
-            if getattr(usage, "input_tokens", None) is not None
-            else getattr(usage, "prompt_tokens", 0)
-        ) or 0
-        output_tokens = (
-            getattr(usage, "output_tokens", None)
-            if getattr(usage, "output_tokens", None) is not None
-            else getattr(usage, "completion_tokens", 0)
-        ) or 0
+        input_tokens = _usage_count(usage, "input_tokens", "prompt_tokens")
+        output_tokens = _usage_count(usage, "output_tokens", "completion_tokens")
+        cached = _cached_tokens(usage)
 
-        input_details = getattr(usage, "input_tokens_details", None)
-        prompt_details = getattr(usage, "prompt_tokens_details", None)
-        cached = 0
-        if input_details is not None:
-            cached = getattr(input_details, "cached_tokens", 0) or 0
-        elif prompt_details is not None:
-            cached = getattr(prompt_details, "cached_tokens", 0) or 0
-
-        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
-        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cache_creation = _usage_count(usage, "cache_creation_input_tokens")
+        cache_read = _usage_count(usage, "cache_read_input_tokens")
         if cache_creation or cache_read:
             input_tokens += cache_creation
             cached = cache_read
