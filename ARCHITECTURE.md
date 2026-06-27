@@ -64,7 +64,7 @@ agents_arch/
 ├── src/
 │   └── vibesolve/
 │       ├── agents/
-│       │   ├── client.py              # AgentCaller — provider-agnostic OpenAI + Anthropic wrapper
+│       │   ├── client.py              # AgentCaller — any-llm-backed provider wrapper
 │       │   └── prompts.py             # Prompt file loader
 │       ├── benchmarking/
 │       │   ├── evaluator.py           # Docker benchmark stages (package, Quarkus boot, endpoint probe, Docker build)
@@ -117,8 +117,8 @@ benchmarking ──────────────────────�
 |---|---|
 | **Delta-based output** | Agents return only changed files, not the full manifest. Saves 60–80% of output tokens on later pipeline stages. |
 | **Typed Pydantic models** | All inter-agent data (`ProblemSpec`, `ProjectManifest`, `Delta`) is validated at parse time — no `dict[str, Any]` at boundaries. |
-| **Provider-agnostic agent caller** | A common `BaseAgentCaller` interface fronts both OpenAI (Responses API) and Anthropic (Messages API); `--provider` selects the implementation. Per-agent reasoning effort maps to OpenAI `reasoning.effort` or the Anthropic extended-thinking budget. |
-| **Structured JSON output** | Agents return guaranteed-valid JSON (OpenAI `json_object` mode), so no regex extraction is needed. |
+| **Provider-agnostic agent caller** | A common `BaseAgentCaller` interface fronts any-llm. Stage-1 compatibility keeps `--provider openai\|claude`; internally `claude` maps to any-llm's Anthropic provider. Per-agent reasoning effort maps to OpenAI `reasoning.effort` or the Anthropic extended-thinking budget. |
+| **Structured JSON output** | Agents request structured JSON through any-llm when supported; Claude-style responses still pass through JSON extraction/repair as a fallback. |
 | **Persistent Docker container** | The validator container stays running between iterations, keeping the Maven cache warm. Cold start ~30 s; subsequent compiles ~5–10 s. |
 | **Incremental Maven compile** | `mvn clean` is skipped when only `.java` files changed (not `pom.xml`), cutting iteration time significantly. |
 | **Selective file injection** | The fixer receives only files referenced in the error output, not the entire manifest, keeping context small. |

@@ -93,7 +93,7 @@ Each agent except Parser/UserValidator returns a `Delta` (`changed_files`, `dele
 ```
 src/vibesolve/
 ├── agents/
-│   ├── client.py          BaseAgentCaller + OpenAIAgentCaller + AnthropicAgentCaller + make_caller_factory
+│   ├── client.py          BaseAgentCaller + AnyLLMAgentCaller + compatibility aliases + make_caller_factory
 │   └── prompts.py         load_prompt() + _PROMPT_FILES (agent → filename map)
 ├── cli/                   main.py (entry point) + run_single.py (`run`) + run_batch.py (`batch`)
 ├── config/settings.py     AppSettings (pydantic-settings) + load_settings(yaml)
@@ -145,9 +145,10 @@ names — pydantic-settings parses the `__` nesting.
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
 - **Per-agent reasoning effort** → `config/settings.py:AgentEfforts` and the `efforts:` block in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else low). Read in `agents/client.py` via `settings.efforts.as_dict()[agent]`; `--reasoning-effort` overrides every agent at once.
 
-`BaseAgentCaller.call_typed()` retries on JSON-parse failure. For Anthropic,
-`_extract_and_repair()` strips code fences and runs `json_repair`, because Claude
-has no JSON mode like OpenAI's Responses API.
+`BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
+through any-llm; stage-1 compatibility keeps `provider=openai|claude`, with
+`claude` mapped internally to any-llm's Anthropic provider. For Claude-style
+responses, `_extract_and_repair()` strips code fences and runs `json_repair`.
 
 ## Generated-project conventions (encoded in prompts)
 

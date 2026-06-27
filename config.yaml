@@ -10,10 +10,11 @@
 #   3. This YAML file
 #   4. Built-in defaults
 
-# LLM provider: openai | claude
+# LLM provider compatibility names: openai | claude
+# Internally these are routed through any-llm (claude -> anthropic).
 provider: openai
 
-# Per-agent reasoning effort (applies to whichever provider is active).
+# Per-agent reasoning effort (applies to whichever any-llm provider is active).
 # Allowed values per agent: low | medium | high
 # Override every agent at once from the CLI with --reasoning-effort.
 efforts:
@@ -27,7 +28,7 @@ efforts:
   user_validator_explain:  low
   user_validator_update:   low
 
-# Per-agent model overrides for OpenAI (used when provider=openai).
+# Per-agent model overrides for OpenAI through any-llm (used when provider=openai).
 models:
   parser:                  gpt-5-mini
   model_builder:           gpt-5-mini
@@ -39,7 +40,7 @@ models:
   user_validator_explain:  gpt-5-mini
   user_validator_update:   gpt-5-mini
 
-# Per-agent model overrides for Claude (used when provider=claude).
+# Per-agent model overrides for Claude through any-llm (used when provider=claude).
 claude_models:
   parser:             claude-haiku-4-5-20251001
   model_builder:      claude-haiku-4-5-20251001
@@ -53,7 +54,7 @@ claude_models:
 
 # --- General runtime settings ---
 
-# Enable OpenAI prompt caching (store=True on Responses API).
+# Enable OpenAI prompt caching (store=True on any-llm's Responses path).
 enable_caching: true
 
 # Run Docker validation (mvn compile + mvn exec:java) after generation.

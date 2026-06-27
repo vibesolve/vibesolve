@@ -240,7 +240,7 @@ agents_arch/
 ├── src/
 │   └── vibesolve/
 │       ├── agents/
-│       │   ├── client.py        # AgentCaller — OpenAI Responses API wrapper
+│       │   ├── client.py        # AgentCaller — any-llm-backed provider wrapper
 │       │   └── prompts.py       # Prompt file loader
 │       ├── benchmarking/
 │       │   ├── evaluator.py     # Docker-heavy benchmark stages (package, Quarkus boot, endpoint round-trip, Docker build)

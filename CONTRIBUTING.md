@@ -7,7 +7,7 @@ Thank you for your interest in contributing! This document covers how to set up 
 - Python 3.11+
 - [Conda](https://docs.conda.io/en/latest/) (recommended) or a virtualenv
 - Docker (required for validation; skip with `--no-validation-loop` during development)
-- An OpenAI API key (or an Anthropic key, for `--provider claude`)
+- An OpenAI API key (or an Anthropic key, for `--provider claude`); provider calls go through any-llm
 
 ## Development Setup
 
@@ -61,7 +61,7 @@ CLI flags override `config.yaml` and environment variables. Run `vibesolve run -
 | `--serve` | off | On success, emit `Dockerfile` + `docker-run.sh` into the generated project. |
 | `--user-validate` | off | Pause after parsing to review and correct the spec before code generation. |
 | `--config PATH` | `config.yaml` if present | YAML config file. |
-| `--provider openai\|claude` | `openai` | LLM provider. |
+| `--provider openai\|claude` | `openai` | Compatibility provider name routed through any-llm. |
 | `--reasoning-effort low\|medium\|high` | per-agent config | Override reasoning effort for all agents at once. |
 | `--max-iterations N` | `max_fix_iterations` (10) | Max fixer agent iterations. |
 | `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |
@@ -75,7 +75,7 @@ CLI flags override `config.yaml` and environment variables. Run `vibesolve run -
 | `--input-dir PATH` | `user_input` | Directory to scan for `*.txt` files. |
 | `--serve` | off | Emit `Dockerfile` + `docker-run.sh` into each successfully-generated project. |
 | `--config PATH` | `config.yaml` if present | YAML config file. |
-| `--provider openai\|claude` | `openai` | LLM provider. |
+| `--provider openai\|claude` | `openai` | Compatibility provider name routed through any-llm. |
 | `--workers N` | `default_workers` (3) | Number of parallel workers. |
 | `--max-iterations N` | `max_fix_iterations` (10) | Max fixer iterations per problem. |
 | `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |
