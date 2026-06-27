@@ -1,14 +1,16 @@
 """
-Agent callers — provider-agnostic base class with OpenAI and Anthropic implementations.
+Agent callers backed by any-llm.
 
-Usage
------
-Build the right caller via the factory:
+Stage-1 compatibility keeps the existing public surface:
 
     factory = make_caller_factory(settings)   # once, in the CLI
     caller  = factory(log_dir, log)           # once per problem run
+
+The CLI/config provider names remain ``openai`` and ``claude``. Internally,
+``claude`` maps to any-llm's ``anthropic`` provider.
 """
 
+import json
 import re
 import time
 from abc import ABC, abstractmethod
@@ -18,6 +20,24 @@ from typing import Any, Callable, TypeVar
 
 import structlog
 from json_repair import repair_json
+
+from vibesolve.agents.prompts import load_prompt
+from vibesolve.config.settings import AppSettings
+
+T = TypeVar("T")
+
+# Anthropic extended-thinking budget tokens per effort level.
+# "low" -> no thinking (cheaper + faster; also the only mode compatible with Haiku).
+_THINKING_BUDGETS: dict[str, int | None] = {
+    "low": None,
+    "medium": 8_000,
+    "high": 16_000,
+}
+
+_ANY_LLM_PROVIDER: dict[str, str] = {
+    "openai": "openai",
+    "claude": "anthropic",
+}
 
 
 def _extract_and_repair(text: str) -> str:
@@ -64,26 +84,78 @@ def _extract_and_repair(text: str) -> str:
                 if depth == 0:
                     return repair_json(text[start : i + 1])
 
-    # 4. fallback — let repair_json do whatever it can
+    # 4. fallback - let repair_json do whatever it can
     return repair_json(text)
-
-from vibesolve.agents.prompts import load_prompt
-from vibesolve.config.settings import AppSettings
-
-T = TypeVar("T")
-
-# Anthropic extended-thinking budget tokens per effort level.
-# "low" → no thinking (cheaper + faster; also the only mode compatible with Haiku).
-_THINKING_BUDGETS: dict[str, int | None] = {
-    "low": None,
-    "medium": 8_000,
-    "high": 16_000,
-}
 
 
 def _uses_adaptive_thinking(model: str) -> bool:
     """claude-opus-4-x uses adaptive thinking API (output_config.effort) instead of budget_tokens."""
     return "opus-4" in model
+
+
+def _serialize_parsed(parsed: Any) -> str:
+    """Serialize structured output returned by any-llm into the JSON string callers expect."""
+    if hasattr(parsed, "model_dump_json"):
+        return parsed.model_dump_json(by_alias=True)
+    if hasattr(parsed, "dict"):
+        return json.dumps(parsed.dict(by_alias=True))
+    return json.dumps(parsed)
+
+
+def _content_part_to_text(part: Any) -> str:
+    if isinstance(part, str):
+        return part
+    if isinstance(part, dict):
+        if "text" in part:
+            return str(part["text"])
+        if part.get("type") == "text" and "content" in part:
+            return str(part["content"])
+        return ""
+    text = getattr(part, "text", None)
+    if text is not None:
+        return str(text)
+    return ""
+
+
+def _response_text(resp: Any) -> str:
+    """Best-effort text extraction across any-llm response wrappers."""
+    parsed = getattr(resp, "output_parsed", None)
+    if parsed is not None:
+        return _serialize_parsed(parsed)
+
+    parsed = getattr(resp, "parsed_output", None)
+    if parsed is not None:
+        return _serialize_parsed(parsed)
+
+    output_text = getattr(resp, "output_text", None)
+    if output_text is not None:
+        return str(output_text)
+
+    content = getattr(resp, "content", None)
+    if content is not None:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "".join(_content_part_to_text(part) for part in content)
+
+    choices = getattr(resp, "choices", None)
+    if choices:
+        choice = choices[0]
+        message = getattr(choice, "message", None)
+        if message is not None:
+            parsed = getattr(message, "parsed", None)
+            if parsed is not None:
+                return _serialize_parsed(parsed)
+            message_content = getattr(message, "content", None)
+            if isinstance(message_content, str):
+                return message_content
+            if isinstance(message_content, list):
+                return "".join(_content_part_to_text(part) for part in message_content)
+        text = getattr(choice, "text", None)
+        if text is not None:
+            return str(text)
+
+    return str(resp)
 
 
 # ---------------------------------------------------------------------------
@@ -135,20 +207,15 @@ class BaseAgentCaller(ABC):
 
 
 # ---------------------------------------------------------------------------
-# OpenAI implementation
+# any-llm implementation
 # ---------------------------------------------------------------------------
 
-class OpenAIAgentCaller(BaseAgentCaller):
-    """
-    Wraps the OpenAI Responses API.
-
-    Uses text.format.type=json_object for guaranteed JSON output and
-    the reasoning.effort parameter for o-series / reasoning models.
-    """
+class AnyLLMAgentCaller(BaseAgentCaller):
+    """Provider-compatible caller implemented through any-llm."""
 
     def __init__(
         self,
-        client,  # openai.OpenAI
+        client: Any,
         settings: AppSettings,
         log_dir: Path,
         log: structlog.BoundLogger,
@@ -161,43 +228,64 @@ class OpenAIAgentCaller(BaseAgentCaller):
         self.agent_tokens: dict[str, dict] = {}
 
     def call(self, agent: str, user_message: str) -> str:
-        model = self._settings.models.as_dict()[agent]
+        """Call an agent and return its JSON response string."""
+        return self._call_with_retries(agent, user_message, model_type=None)
+
+    def call_typed(self, agent: str, user_message: str, model_type: type[T]) -> T:
+        """Call an agent, asking any-llm for structured output where available."""
+        last_exc: Exception | None = None
+        for attempt in range(1, 4):
+            raw = self._call_once(agent, user_message, model_type=model_type, attempt=attempt)
+            try:
+                return model_type.model_validate_json(raw)  # type: ignore[attr-defined]
+            except Exception as exc:
+                last_exc = exc
+                self._log.warning(
+                    "agent_parse_failed",
+                    agent=agent,
+                    attempt=attempt,
+                    error=str(exc),
+                )
+        raise last_exc  # type: ignore[misc]
+
+    def _call_with_retries(
+        self,
+        agent: str,
+        user_message: str,
+        model_type: type[Any] | None,
+    ) -> str:
+        for attempt in range(1, 4):
+            content = self._call_once(agent, user_message, model_type=model_type, attempt=attempt)
+            if content.strip():
+                return content
+            self._log.warning("empty_response_retry", agent=agent, attempt=attempt)
+        raise ValueError(f"Agent '{agent}' returned an empty response after 3 attempts")
+
+    def _call_once(
+        self,
+        agent: str,
+        user_message: str,
+        *,
+        model_type: type[Any] | None,
+        attempt: int,
+    ) -> str:
+        model = self._model_for(agent)
         effort = self._settings.efforts.as_dict()[agent]
 
-        self._log.info("calling_agent", agent=agent, model=model, effort=effort)
+        self._log.info("calling_agent", agent=agent, model=model, effort=effort, attempt=attempt)
         t0 = time.time()
 
-        api_params: dict[str, Any] = {
-            "model": model,
-            "input": [
-                {"role": "developer", "content": load_prompt(agent)},
-                {"role": "user", "content": user_message},
-            ],
-            "reasoning": {"effort": effort},
-            "text": {"format": {"type": "json_object"}},
-        }
-        if self._settings.enable_caching:
-            api_params["store"] = True
+        if self._settings.provider == "openai":
+            resp = self._call_openai(agent, user_message, model, effort, model_type)
+            content = _response_text(resp)
+        else:
+            resp = self._call_anthropic(agent, user_message, model, effort, model_type)
+            content = _extract_and_repair(_response_text(resp))
 
-        resp = self._client.responses.create(**api_params)
         elapsed = time.time() - t0
         self.agent_times[agent] = self.agent_times.get(agent, 0.0) + elapsed
+        self._record_usage(agent, model, resp)
 
-        # Token usage. Responses API: input_tokens already INCLUDES cached tokens;
-        # the cached subset lives under input_tokens_details.cached_tokens.
-        usage = getattr(resp, "usage", None)
-        if usage is not None:
-            details = getattr(usage, "input_tokens_details", None)
-            cached = (getattr(details, "cached_tokens", 0) or 0) if details is not None else 0
-            self._accumulate_tokens(
-                agent,
-                model,
-                input_tokens=getattr(usage, "input_tokens", 0) or 0,
-                cached_input_tokens=cached,
-                output_tokens=getattr(usage, "output_tokens", 0) or 0,
-            )
-
-        content: str = resp.output_text
         self._log.info("agent_response", agent=agent, chars=len(content), elapsed_s=round(elapsed, 2))
 
         ts_tag = datetime.now().strftime("%H%M%S")
@@ -205,109 +293,112 @@ class OpenAIAgentCaller(BaseAgentCaller):
 
         return content
 
+    def _model_for(self, agent: str) -> str:
+        if self._settings.provider == "openai":
+            return self._settings.models.as_dict()[agent]
+        return self._settings.claude_models.as_dict()[agent]
 
-# ---------------------------------------------------------------------------
-# Anthropic implementation
-# ---------------------------------------------------------------------------
-
-class AnthropicAgentCaller(BaseAgentCaller):
-    """
-    Wraps the Anthropic Messages API.
-
-    Effort levels:
-      low    → plain messages.create (no extended thinking; compatible with Haiku)
-      medium → extended thinking, budget_tokens=8 000 (requires Sonnet+)
-      high   → extended thinking, budget_tokens=16 000 (requires Sonnet+)
-
-    JSON output relies on prompt instructions (all system prompts already ask
-    for JSON-only responses) rather than a dedicated JSON mode.
-    """
-
-    def __init__(
+    def _call_openai(
         self,
-        client,  # anthropic.Anthropic
-        settings: AppSettings,
-        log_dir: Path,
-        log: structlog.BoundLogger,
-    ) -> None:
-        self._client = client
-        self._settings = settings
-        self._log_dir = log_dir
-        self._log = log
-        self.agent_times: dict[str, float] = {}
-        self.agent_tokens: dict[str, dict] = {}
+        agent: str,
+        user_message: str,
+        model: str,
+        effort: str,
+        model_type: type[Any] | None,
+    ) -> Any:
+        response_format: Any
+        if model_type is not None:
+            response_format = model_type
+        else:
+            response_format = {"type": "json_object"}
 
-    def call(self, agent: str, user_message: str) -> str:
-        model = self._settings.claude_models.as_dict()[agent]
-        effort = self._settings.efforts.as_dict()[agent]
+        api_params: dict[str, Any] = {
+            "model": model,
+            "input_data": user_message,
+            "instructions": load_prompt(agent),
+            "reasoning": {"effort": effort},
+            "response_format": response_format,
+        }
+        if self._settings.enable_caching:
+            api_params["store"] = True
+
+        try:
+            return self._client.responses(**api_params)
+        except TypeError as exc:
+            # any-llm versions before the input_data spelling used input.
+            if "input_data" not in str(exc):
+                raise
+            api_params["input"] = api_params.pop("input_data")
+            return self._client.responses(**api_params)
+
+    def _call_anthropic(
+        self,
+        agent: str,
+        user_message: str,
+        model: str,
+        effort: str,
+        model_type: type[Any] | None,
+    ) -> Any:
         budget = _THINKING_BUDGETS[effort]
-
-        messages: list[dict] = [{"role": "user", "content": user_message}]
-
-        create_params: dict[str, Any] = {
+        api_params: dict[str, Any] = {
             "model": model,
             "system": load_prompt(agent),
-            "messages": messages,
+            "messages": [{"role": "user", "content": user_message}],
         }
+
+        if model_type is not None:
+            api_params["output_format"] = model_type
 
         if budget is not None:
             if _uses_adaptive_thinking(model):
-                # claude-opus-4-x uses the newer adaptive thinking API.
-                create_params["thinking"] = {"type": "adaptive"}
-                create_params["output_config"] = {"effort": effort}
-                create_params["max_tokens"] = 16_000
+                api_params["thinking"] = {"type": "adaptive"}
+                api_params["output_config"] = {"effort": effort}
+                api_params["max_tokens"] = 16_000
             else:
-                create_params["thinking"] = {"type": "enabled", "budget_tokens": budget}
-                create_params["max_tokens"] = budget + 8_192
+                api_params["thinking"] = {"type": "enabled", "budget_tokens": budget}
+                api_params["max_tokens"] = budget + 8_192
         else:
-            create_params["max_tokens"] = 8_192
+            api_params["max_tokens"] = 8_192
 
-        for attempt in range(1, 4):
-            self._log.info("calling_agent", agent=agent, model=model, effort=effort, attempt=attempt)
-            t0 = time.time()
+        return self._client.messages(**api_params)
 
-            if budget is not None:
-                # Anthropic requires streaming for long-running extended-thinking requests.
-                with self._client.messages.stream(**create_params) as stream:
-                    resp = stream.get_final_message()
-            else:
-                resp = self._client.messages.create(**create_params)
+    def _record_usage(self, agent: str, model: str, resp: Any) -> None:
+        usage = getattr(resp, "usage", None)
+        if usage is None:
+            return
 
-            elapsed = time.time() - t0
-            self.agent_times[agent] = self.agent_times.get(agent, 0.0) + elapsed
+        input_tokens = (
+            getattr(usage, "input_tokens", None)
+            if getattr(usage, "input_tokens", None) is not None
+            else getattr(usage, "prompt_tokens", 0)
+        ) or 0
+        output_tokens = (
+            getattr(usage, "output_tokens", None)
+            if getattr(usage, "output_tokens", None) is not None
+            else getattr(usage, "completion_tokens", 0)
+        ) or 0
 
-            # Token usage. Anthropic reports input_tokens WITHOUT the cached/created
-            # cache tokens, so fold cache_creation into fresh input and track
-            # cache_read separately as the cheaper cached portion.
-            usage = getattr(resp, "usage", None)
-            if usage is not None:
-                self._accumulate_tokens(
-                    agent,
-                    model,
-                    input_tokens=(getattr(usage, "input_tokens", 0) or 0)
-                    + (getattr(usage, "cache_creation_input_tokens", 0) or 0),
-                    cached_input_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
-                    output_tokens=getattr(usage, "output_tokens", 0) or 0,
-                )
+        input_details = getattr(usage, "input_tokens_details", None)
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        cached = 0
+        if input_details is not None:
+            cached = getattr(input_details, "cached_tokens", 0) or 0
+        elif prompt_details is not None:
+            cached = getattr(prompt_details, "cached_tokens", 0) or 0
 
-            # Content list may include ThinkingBlock(s) when extended thinking is on;
-            # we only want the TextBlock that contains the JSON response.
-            text_block = next((block.text for block in resp.content if block.type == "text"), "")
-            content = _extract_and_repair(text_block)
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        if cache_creation or cache_read:
+            input_tokens += cache_creation
+            cached = cache_read
 
-            self._log.info("agent_response", agent=agent, chars=len(content), elapsed_s=round(elapsed, 2))
-
-            if content.strip():
-                break
-
-            self._log.warning("empty_response_retry", agent=agent, attempt=attempt)
-        else:
-            raise ValueError(f"Agent '{agent}' returned an empty response after 3 attempts")
-
-        ts_tag = datetime.now().strftime("%H%M%S")
-        (self._log_dir / f"{agent}-response_{ts_tag}.txt").write_text(content, encoding="utf-8")
-
-        return content
+        self._accumulate_tokens(
+            agent,
+            model,
+            input_tokens=input_tokens,
+            cached_input_tokens=cached,
+            output_tokens=output_tokens,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -318,42 +409,48 @@ def make_caller_factory(settings: AppSettings) -> Callable:
     """
     Return a ``(log_dir, log) -> BaseAgentCaller`` factory for the configured provider.
 
-    The underlying API client is created once here and shared across all calls
-    (both openai.OpenAI and anthropic.Anthropic clients are thread-safe for
-    I/O-bound workloads like parallel batch runs).
+    The any-llm provider client is created once here and shared across calls.
+    This preserves the previous factory contract while removing direct SDK
+    wiring from VibeSolve.
     """
+    try:
+        any_llm_provider = _ANY_LLM_PROVIDER[settings.provider]
+    except KeyError as exc:
+        supported = "|".join(_ANY_LLM_PROVIDER)
+        raise ValueError(
+            f"Unsupported provider={settings.provider!r}. Supported values: {supported}."
+        ) from exc
+
+    api_key = _api_key_for(settings)
+
+    if not api_key:
+        env_name = "OPENAI_API_KEY" if settings.provider == "openai" else "ANTHROPIC_API_KEY"
+        raise ValueError(
+            f"{env_name} is required when provider={settings.provider}. "
+            "Set it in .env.local or as an environment variable."
+        )
+
+    from any_llm import AnyLLM
+
+    client = AnyLLM.create(any_llm_provider, api_key=api_key)
+
+    def _factory(log_dir: Path, log: structlog.BoundLogger) -> BaseAgentCaller:
+        return AnyLLMAgentCaller(client=client, settings=settings, log_dir=log_dir, log=log)
+
+    return _factory
+
+
+def _api_key_for(settings: AppSettings) -> str:
     if settings.provider == "openai":
-        if not settings.openai_api_key:
-            raise ValueError(
-                "OPENAI_API_KEY is required when provider=openai. "
-                "Set it in .env.local or as an environment variable."
-            )
-        from openai import OpenAI
-        client = OpenAI(api_key=settings.openai_api_key)
-
-        def _openai_factory(log_dir: Path, log: structlog.BoundLogger) -> BaseAgentCaller:
-            return OpenAIAgentCaller(client=client, settings=settings, log_dir=log_dir, log=log)
-
-        return _openai_factory
-
-    else:  # provider == "claude"
-        if not settings.anthropic_api_key:
-            raise ValueError(
-                "ANTHROPIC_API_KEY is required when provider=claude. "
-                "Set it in .env.local or as an environment variable."
-            )
-        import anthropic
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
-        def _anthropic_factory(log_dir: Path, log: structlog.BoundLogger) -> BaseAgentCaller:
-            return AnthropicAgentCaller(client=client, settings=settings, log_dir=log_dir, log=log)
-
-        return _anthropic_factory
+        return settings.openai_api_key
+    return settings.anthropic_api_key
 
 
 # ---------------------------------------------------------------------------
-# Backward-compat alias
+# Backward-compat aliases
 # ---------------------------------------------------------------------------
 
-#: Legacy name kept so any external code that imports AgentCaller still works.
-AgentCaller = OpenAIAgentCaller
+# Legacy names kept so external code importing these classes continues to work.
+OpenAIAgentCaller = AnyLLMAgentCaller
+AnthropicAgentCaller = AnyLLMAgentCaller
+AgentCaller = AnyLLMAgentCaller

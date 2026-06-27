@@ -15,6 +15,8 @@ def test_builtin_defaults():
     assert settings.efforts.fixer == "high"
     # Nested per-agent model defaults are populated.
     assert settings.models.parser == "gpt-5-mini"
+    assert settings.claude_models.user_validator_explain == "claude-haiku-4-5-20251001"
+    assert settings.claude_models.user_validator_update == "claude-haiku-4-5-20251001"
 
 
 def test_yaml_overrides_defaults(tmp_path, monkeypatch):
