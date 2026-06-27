@@ -23,26 +23,26 @@ class AgentModels(BaseModel):
         return self.model_dump()
 
 
-EffortLevel = Literal["low", "medium", "high"]
+EffortLevel = Literal["none", "low", "medium", "high"]
 
 
 class AgentEfforts(BaseModel):
-    """Per-agent reasoning effort (low | medium | high).
+    """Per-agent reasoning effort (none | low | medium | high).
 
-    Applies to both providers: for OpenAI it sets ``reasoning.effort``; for
-    Claude it selects the extended-thinking budget. Defaults are low for the
-    fast generation stages, medium for the reviewer, and high for the fixer.
+    Applies to both providers through any-llm. Explicit values, including
+    ``none``, are passed through unchanged. Defaults disable reasoning for the
+    fast generation stages, use medium for the reviewer, and high for the fixer.
     """
 
-    parser: EffortLevel = "low"
-    model_builder: EffortLevel = "low"
-    constraint_builder: EffortLevel = "low"
-    io: EffortLevel = "low"
-    integrator: EffortLevel = "low"
+    parser: EffortLevel = "none"
+    model_builder: EffortLevel = "none"
+    constraint_builder: EffortLevel = "none"
+    io: EffortLevel = "none"
+    integrator: EffortLevel = "none"
     reviewer: EffortLevel = "medium"
     fixer: EffortLevel = "high"
-    user_validator_explain: EffortLevel = "low"
-    user_validator_update: EffortLevel = "low"
+    user_validator_explain: EffortLevel = "none"
+    user_validator_update: EffortLevel = "none"
 
     def as_dict(self) -> dict[str, str]:
         return self.model_dump()
@@ -62,6 +62,8 @@ class ClaudeAgentModels(BaseModel):
     integrator: str = "claude-haiku-4-5-20251001"
     reviewer: str = "claude-sonnet-4-6"
     fixer: str = "claude-sonnet-4-6"
+    user_validator_explain: str = "claude-haiku-4-5-20251001"
+    user_validator_update: str = "claude-haiku-4-5-20251001"
 
     def as_dict(self) -> dict[str, str]:
         return self.model_dump()
@@ -74,19 +76,20 @@ class AppSettings(BaseSettings):
         extra="ignore",
     )
 
-    # Provider selection — "openai" (default) or "claude"
+    # Compatibility provider selection. "claude" maps to any-llm's "anthropic".
     provider: Literal["openai", "claude"] = "openai"
 
     # API keys — only the one matching the active provider is required at runtime
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
+    # Reserved for provider caching support; kept for config compatibility.
     enable_caching: bool = True
     enable_docker_validation: bool = True
     max_fix_iterations: int = 10
     default_workers: int = 3
 
-    # Per-agent reasoning effort (applies to whichever provider is active)
+    # Per-agent reasoning effort (applies to whichever any-llm provider is active)
     efforts: AgentEfforts = Field(default_factory=AgentEfforts)
 
     # Per-provider model configuration

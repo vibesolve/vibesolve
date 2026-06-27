@@ -40,6 +40,24 @@ wheels = [
 ]
 
 [[package]]
+name = "any-llm-sdk"
+version = "1.26.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anthropic" },
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "openresponses-types" },
+    { name = "pydantic" },
+    { name = "rich" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f8/23/abf2deede89c7293467e1a62565c3b4b6a3272785ca6c4d3e784e03ea255/any_llm_sdk-1.26.0.tar.gz", hash = "sha256:a2458bce7601e7761ed067ffa784473a83f610fb011862baf3e9eea1cf84cd35", size = 199609, upload-time = "2026-08-17T10:13:41.608Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/6d/1b3eff49eb77851ac525e62d48b305364de87a72e697cdb156325a03479f/any_llm_sdk-1.26.0-py3-none-any.whl", hash = "sha256:b65c5521c79ee974b39d837863532d41f024b768336e797817b2c310a33c73d6", size = 254205, upload-time = "2026-08-17T10:13:40.224Z" },
+]
+
+[[package]]
 name = "anyio"
 version = "4.14.1"
 source = { registry = "https://pypi.org/simple" }
@@ -276,6 +294,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ef/cf/36e3e7235fdf6d125c052acc0970924611b17a20a4fe580596faf4566a65/openai-2.53.0.tar.gz", hash = "sha256:baf5802ad08980e1d9d561e1b996e800c8bcd14af5847c6d0e7a5cc59e4d4116", size = 1099435, upload-time = "2026-08-03T21:42:01.664Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/0f/cc6afea3542a5142c5d8fc8211c5e059a8375105d004a41dfa2c7948dbb0/openai-2.53.0-py3-none-any.whl", hash = "sha256:c694ffc747a3c4d1663ef2b07b811315a476164ee5efa3a993967349ebca7618", size = 1659829, upload-time = "2026-08-03T21:41:59.581Z" },
+]
+
+[[package]]
+name = "openresponses-types"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/db/eb/cb4a855a27c6cf04af2d47c896b6549040a86bb75e6a59cb687a8bcf19aa/openresponses_types-2.4.0.tar.gz", hash = "sha256:cd55e7fa17230d8edd46e254ef34666ca6f250b7efa3712a110aac546c7dc8d5", size = 22101, upload-time = "2026-08-05T12:22:46.167Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5b/ef/2605d7219b0fa648e66ab15043bae492f4e8d3c4de4fdad85fc5eadb95a3/openresponses_types-2.4.0-py3-none-any.whl", hash = "sha256:186406592bc115bf12d9ee88320f8051ab1ade0a8fa8941fd1e44b0be16684f1", size = 15097, upload-time = "2026-08-05T12:22:45.044Z" },
 ]
 
 [[package]]
@@ -609,10 +639,9 @@ name = "vibesolve"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "anthropic" },
+    { name = "any-llm-sdk" },
     { name = "httpx" },
     { name = "json-repair" },
-    { name = "openai" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
@@ -628,10 +657,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", specifier = ">=0.121.0" },
+    { name = "any-llm-sdk", extras = ["anthropic", "openai"], specifier = ">=1.19.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "json-repair", specifier = ">=0.62.0" },
-    { name = "openai", specifier = ">=2.53.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },

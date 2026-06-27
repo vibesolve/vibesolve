@@ -27,8 +27,11 @@ def run_user_validation_loop(
     while True:
         iteration += 1
 
-        raw = caller.call("user_validator_explain", json.dumps(problem_spec.to_legacy_dict()))
-        explanation = UserValidationExplanation.model_validate_json(raw)
+        explanation = caller.call_typed(
+            "user_validator_explain",
+            json.dumps(problem_spec.to_legacy_dict()),
+            UserValidationExplanation,
+        )
         md_path.write_text(explanation.markdown, encoding="utf-8")
 
         typer.echo(f"\n{'─' * 60}")
