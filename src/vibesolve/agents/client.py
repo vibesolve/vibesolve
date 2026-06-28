@@ -93,6 +93,18 @@ def _uses_adaptive_thinking(model: str) -> bool:
     return "opus-4" in model
 
 
+def _structured_text_format(model_type: type[Any]) -> dict[str, Any]:
+    name = re.sub(r"[^A-Za-z0-9_-]", "_", model_type.__name__)[:64] or "response"
+    return {
+        "format": {
+            "type": "json_schema",
+            "name": name,
+            "schema": model_type.model_json_schema(by_alias=True),  # type: ignore[attr-defined]
+            "strict": False,
+        }
+    }
+
+
 def _serialize_parsed(parsed: Any) -> str:
     """Serialize structured output returned by any-llm into the JSON string callers expect."""
     if hasattr(parsed, "model_dump_json"):
@@ -266,8 +278,27 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         model_type: type[T] | None,
     ) -> T | str:
         last_exc: Exception | None = None
+        structured_unavailable = False
         for attempt in range(1, 4):
-            raw = self._call_once(agent, user_message, model_type=model_type, attempt=attempt)
+            use_structured = model_type is not None and not structured_unavailable
+            try:
+                raw = self._call_once(
+                    agent,
+                    user_message,
+                    model_type=model_type if use_structured else None,
+                    attempt=attempt,
+                )
+            except Exception as exc:
+                if use_structured:
+                    structured_unavailable = True
+                    self._log.warning(
+                        "structured_output_fallback",
+                        agent=agent,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
+                    continue
+                raise
 
             if model_type is None:
                 if raw.strip():
@@ -333,14 +364,16 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         user_message: str,
         model: str,
         effort: str,
-        _model_type: type[Any] | None,
+        model_type: type[Any] | None,
     ) -> Any:
         api_params: dict[str, Any] = {
             "model": model,
             "input_data": user_message,
             "instructions": load_prompt(agent),
             "reasoning": {"effort": effort},
-            "text": {"format": {"type": "json_object"}},
+            "text": _structured_text_format(model_type)
+            if model_type is not None
+            else {"format": {"type": "json_object"}},
         }
         if self._settings.enable_caching:
             api_params["store"] = True
@@ -360,8 +393,11 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         user_message: str,
         model: str,
         effort: str,
-        _model_type: type[Any] | None,
+        model_type: type[Any] | None,
     ) -> Any:
+        if model_type is not None:
+            return self._call_anthropic_completion(agent, user_message, model, effort, model_type)
+
         budget = _THINKING_BUDGETS[effort]
         api_params: dict[str, Any] = {
             "model": model,
@@ -381,6 +417,24 @@ class AnyLLMAgentCaller(BaseAgentCaller):
             api_params["max_tokens"] = 8_192
 
         return self._client.messages(**api_params)
+
+    def _call_anthropic_completion(
+        self,
+        agent: str,
+        user_message: str,
+        model: str,
+        effort: str,
+        model_type: type[Any],
+    ) -> Any:
+        return self._client.completion(
+            model=model,
+            messages=[
+                {"role": "system", "content": load_prompt(agent)},
+                {"role": "user", "content": user_message},
+            ],
+            response_format=model_type,
+            reasoning_effort=effort,
+        )
 
     def _record_usage(self, agent: str, model: str, resp: Any) -> None:
         usage = getattr(resp, "usage", None)

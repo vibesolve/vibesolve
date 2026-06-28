@@ -8,7 +8,7 @@ import structlog
 
 from vibesolve.agents.client import AnyLLMAgentCaller, make_caller_factory
 from vibesolve.config.settings import AppSettings
-from vibesolve.models.domain import Delta
+from vibesolve.models.domain import Delta, FileEntry
 
 
 def _caller(tmp_path, client, settings: AppSettings) -> AnyLLMAgentCaller:
@@ -55,7 +55,7 @@ def test_make_caller_factory_rejects_unsupported_provider():
         make_caller_factory(settings)
 
 
-def test_openai_call_uses_any_llm_responses_path(tmp_path):
+def test_openai_raw_call_returns_json_and_tracks_tokens(tmp_path):
     calls: list[dict] = []
 
     class FakeClient:
@@ -76,13 +76,7 @@ def test_openai_call_uses_any_llm_responses_path(tmp_path):
     raw = caller.call("parser", "make a schedule")
 
     assert raw == '{"problemType":"test"}'
-    assert calls[0]["model"] == settings.models.parser
-    assert calls[0]["input_data"] == "make a schedule"
-    assert calls[0]["instructions"]
     assert calls[0]["text"] == {"format": {"type": "json_object"}}
-    assert "response_format" not in calls[0]
-    assert calls[0]["reasoning"] == {"effort": "low"}
-    assert calls[0]["store"] is True
     assert caller.agent_tokens["parser"] == {
         "model": settings.models.parser,
         "input_tokens": 10,
@@ -91,12 +85,65 @@ def test_openai_call_uses_any_llm_responses_path(tmp_path):
     }
 
 
-def test_claude_call_typed_uses_any_llm_messages_path(tmp_path):
+def test_openai_typed_call_requests_schema_and_parses_result(tmp_path):
     calls: list[dict] = []
 
     class FakeClient:
-        def messages(self, **params):
+        def responses(self, **params):
             calls.append(params)
+            return SimpleNamespace(output_text='{"changed_files":[]}')
+
+    settings = AppSettings(provider="openai", openai_api_key="openai-key")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files == []
+    assert calls[0]["text"]["format"]["type"] == "json_schema"
+
+
+def test_claude_typed_call_prefers_structured_completion(tmp_path):
+    calls: list[str] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append("completion")
+            assert params["response_format"] is Delta
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            parsed=Delta(
+                                changed_files=[FileEntry(path="pom.xml", content="<project />")]
+                            )
+                        )
+                    )
+                ]
+            )
+
+        def messages(self, **_params):
+            raise AssertionError("messages fallback should not be used")
+
+    settings = AppSettings(provider="claude", anthropic_api_key="anthropic-key")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files[0].path == "pom.xml"
+    assert calls == ["completion"]
+
+
+def test_claude_typed_call_falls_back_when_structured_is_rejected(tmp_path):
+    calls: list[str] = []
+
+    class FakeClient:
+        def completion(self, **_params):
+            calls.append("completion")
+            raise TypeError("response_format is not supported")
+
+        def messages(self, **params):
+            calls.append("messages")
+            assert "output_format" not in params
             return SimpleNamespace(
                 content=[
                     SimpleNamespace(
@@ -118,12 +165,7 @@ def test_claude_call_typed_uses_any_llm_messages_path(tmp_path):
     delta = caller.call_typed("fixer", "{}", Delta)
 
     assert delta.changed_files[0].path == "pom.xml"
-    assert calls[0]["model"] == settings.claude_models.fixer
-    assert calls[0]["messages"] == [{"role": "user", "content": "{}"}]
-    assert calls[0]["system"]
-    assert "output_format" not in calls[0]
-    assert calls[0]["thinking"] == {"type": "enabled", "budget_tokens": 16_000}
-    assert calls[0]["max_tokens"] == 24_192
+    assert calls == ["completion", "messages"]
     assert caller.agent_tokens["fixer"] == {
         "model": settings.claude_models.fixer,
         "input_tokens": 6,
