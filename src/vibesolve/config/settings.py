@@ -122,25 +122,26 @@ def load_settings(config_file: Path | None = None) -> "AppSettings":
     def _env_key(field: str) -> str:
         return field.upper()
 
+    def _merge_nested_env(section: str, prefix: str) -> None:
+        """Apply nested env overrides without discarding sibling YAML values."""
+        if section not in filtered:
+            return
+        merged = dict(filtered[section] or {})
+        for key, value in os.environ.items():
+            if key.startswith(prefix):
+                merged[key.removeprefix(prefix).lower()] = value
+        filtered[section] = merged
+
     filtered = {
         k: v for k, v in data.items()
         if _env_key(k) not in os.environ
     }
 
-    # The nested model fields are keyed "models" / "claude_models" in YAML;
-    # drop them if the corresponding MODELS__* / CLAUDE_MODELS__* env vars are
-    # present — pydantic-settings will handle those directly.
-    if "models" in filtered and any(
-        k.startswith("MODELS__") for k in os.environ
-    ):
-        filtered.pop("models")
-    if "claude_models" in filtered and any(
-        k.startswith("CLAUDE_MODELS__") for k in os.environ
-    ):
-        filtered.pop("claude_models")
-    if "efforts" in filtered and any(
-        k.startswith("EFFORTS__") for k in os.environ
-    ):
-        filtered.pop("efforts")
+    # Init kwargs have higher priority than env vars in pydantic-settings. For
+    # nested sections supplied by YAML, merge the specific nested env override
+    # into the YAML dict so siblings keep their YAML values.
+    _merge_nested_env("models", "MODELS__")
+    _merge_nested_env("claude_models", "CLAUDE_MODELS__")
+    _merge_nested_env("efforts", "EFFORTS__")
 
     return AppSettings(**filtered)

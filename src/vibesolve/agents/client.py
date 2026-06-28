@@ -333,20 +333,14 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         user_message: str,
         model: str,
         effort: str,
-        model_type: type[Any] | None,
+        _model_type: type[Any] | None,
     ) -> Any:
-        response_format: Any
-        if model_type is not None:
-            response_format = model_type
-        else:
-            response_format = {"type": "json_object"}
-
         api_params: dict[str, Any] = {
             "model": model,
             "input_data": user_message,
             "instructions": load_prompt(agent),
             "reasoning": {"effort": effort},
-            "response_format": response_format,
+            "text": {"format": {"type": "json_object"}},
         }
         if self._settings.enable_caching:
             api_params["store"] = True
@@ -366,7 +360,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         user_message: str,
         model: str,
         effort: str,
-        model_type: type[Any] | None,
+        _model_type: type[Any] | None,
     ) -> Any:
         budget = _THINKING_BUDGETS[effort]
         api_params: dict[str, Any] = {
@@ -374,9 +368,6 @@ class AnyLLMAgentCaller(BaseAgentCaller):
             "system": load_prompt(agent),
             "messages": [{"role": "user", "content": user_message}],
         }
-
-        if model_type is not None:
-            api_params["output_format"] = model_type
 
         if budget is not None:
             if _uses_adaptive_thinking(model):

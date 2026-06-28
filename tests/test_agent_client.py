@@ -8,7 +8,7 @@ import structlog
 
 from vibesolve.agents.client import AnyLLMAgentCaller, make_caller_factory
 from vibesolve.config.settings import AppSettings
-from vibesolve.models.domain import Delta, FileEntry
+from vibesolve.models.domain import Delta
 
 
 def _caller(tmp_path, client, settings: AppSettings) -> AnyLLMAgentCaller:
@@ -79,7 +79,8 @@ def test_openai_call_uses_any_llm_responses_path(tmp_path):
     assert calls[0]["model"] == settings.models.parser
     assert calls[0]["input_data"] == "make a schedule"
     assert calls[0]["instructions"]
-    assert calls[0]["response_format"] == {"type": "json_object"}
+    assert calls[0]["text"] == {"format": {"type": "json_object"}}
+    assert "response_format" not in calls[0]
     assert calls[0]["reasoning"] == {"effort": "low"}
     assert calls[0]["store"] is True
     assert caller.agent_tokens["parser"] == {
@@ -97,9 +98,12 @@ def test_claude_call_typed_uses_any_llm_messages_path(tmp_path):
         def messages(self, **params):
             calls.append(params)
             return SimpleNamespace(
-                parsed_output=Delta(
-                    changed_files=[FileEntry(path="pom.xml", content="<project />")],
-                ),
+                content=[
+                    SimpleNamespace(
+                        type="text",
+                        text='{"changed_files":[{"path":"pom.xml","content":"<project />"}]}',
+                    )
+                ],
                 usage=SimpleNamespace(
                     input_tokens=5,
                     cache_creation_input_tokens=1,
@@ -117,7 +121,7 @@ def test_claude_call_typed_uses_any_llm_messages_path(tmp_path):
     assert calls[0]["model"] == settings.claude_models.fixer
     assert calls[0]["messages"] == [{"role": "user", "content": "{}"}]
     assert calls[0]["system"]
-    assert calls[0]["output_format"] is Delta
+    assert "output_format" not in calls[0]
     assert calls[0]["thinking"] == {"type": "enabled", "budget_tokens": 16_000}
     assert calls[0]["max_tokens"] == 24_192
     assert caller.agent_tokens["fixer"] == {

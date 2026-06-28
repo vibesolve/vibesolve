@@ -46,3 +46,18 @@ def test_env_var_overrides_yaml(tmp_path, monkeypatch):
 
     settings = load_settings(config)
     assert settings.max_fix_iterations == 42
+
+
+def test_nested_env_var_overrides_only_matching_yaml_key(tmp_path, monkeypatch):
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "models:\n"
+        "  parser: yaml-parser\n"
+        "  fixer: yaml-fixer\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MODELS__FIXER", "env-fixer")
+
+    settings = load_settings(config)
+    assert settings.models.parser == "yaml-parser"
+    assert settings.models.fixer == "env-fixer"
