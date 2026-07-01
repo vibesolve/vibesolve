@@ -20,8 +20,8 @@ uv sync --extra dev
 # Activate it — once per shell; puts `vibesolve` and `pytest` on PATH
 source .venv/bin/activate
 
-# Configure API keys
-# Create .env.local with OPENAI_API_KEY=your-key
+# Configure provider credentials
+# Create .env.local with credentials such as OPENAI_API_KEY=your-key
 
 # Build the Docker validator image (first run only)
 docker build -t timefold-validator docker/
@@ -131,7 +131,7 @@ enable_docker_validation: true
 max_fix_iterations: 10
 default_workers: 3
 
-# Provider compatibility name: openai or claude (`claude` maps to anthropic).
+# any-llm provider name. `claude` aliases to `anthropic`.
 provider: openai
 
 # Per-agent model and reasoning effort (none | low | medium | high).
@@ -181,7 +181,7 @@ provider_models:
       effort: none
 ```
 
-Keep `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` in `.env.local` — never put secrets in `config.yaml`.
+Keep provider credentials in `.env.local` or provider-native credential stores — never put secrets in `config.yaml`.
 
 ## Architecture
 
@@ -300,7 +300,7 @@ agents_arch/
 │   └── pom-warmup.xml           # Pre-bakes Maven deps into Docker image
 ├── user_input/                  # Problem description .txt files
 ├── pyproject.toml               # Package metadata + CLI entry points
-└── .env.local                   # OPENAI_API_KEY / ANTHROPIC_API_KEY (not committed)
+└── .env.local                   # provider credentials (not committed)
 ```
 
 ## Docker Validation & Feedback Loop

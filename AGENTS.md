@@ -28,10 +28,11 @@ docker build -t timefold-validator docker/   # pre-bakes Maven deps into the val
 
 Python 3.11+ is required (modern type annotations). Every command in this file assumes the venv is activated; without activation, prefix with `uv run` (e.g. `uv run pytest`). If uv cannot find a suitable Python, install one with `uv python install 3.13`.
 
-Provider calls go through any-llm. Select `openai` or `claude` with
-`--provider`; the compatibility value `claude` maps to any-llm's `anthropic`
-provider. Put the matching `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in
-`.env.local`.
+Provider calls go through any-llm. Pass any installed any-llm provider name with
+`--provider` (for example `openai`, `anthropic`, `bedrock`); the legacy
+`claude` value is kept as an alias for `anthropic`. Credentials come from
+provider-specific environment variables or credential chains, or from the
+generic `API_KEY` setting where the provider accepts a single API key.
 
 Make sure the Docker daemon is running before the `docker build` (Linux:
 `sudo systemctl start docker`; macOS/Windows: launch Docker Desktop).
@@ -51,7 +52,7 @@ Run `vibesolve --help` (or `vibesolve run --help` / `vibesolve batch --help`) fo
 Flags shared by both subcommands:
 
 - `--config path/to.yaml` — use a different config file (the root `config.yaml` auto-loads otherwise)
-- `--provider openai|claude` — pick the LLM provider
+- `--provider PROVIDER` — any-llm provider name; `claude` aliases to `anthropic`
 - `--no-validation-loop` — skip the Docker validation/fixer loop entirely (prompt-debugging only)
 - `--max-iterations N` — cap fixer retries
 - `--serve` — on success, emit a portable `Dockerfile` + `docker-run.sh` into the generated project
@@ -122,7 +123,7 @@ docker/Dockerfile          eclipse-temurin:17-jdk-jammy + Maven
 docker/pom-warmup.xml      warms the Maven cache at image build with the generated projects' dependency set
 user_input/*.txt           Problem descriptions — input to the pipeline
 config.yaml                Project-level settings (auto-loaded; CLI flags override)
-.env.local                 OPENAI_API_KEY / ANTHROPIC_API_KEY — NEVER commit (copy from .env.example)
+.env.local                 provider credentials — NEVER commit (copy from .env.example)
 logs/run_<ts>/             pipeline.log + per-agent raw response files
 results/run_<ts>/          ProblemSpec.json, ProjectManifest.json, <project>/, <project>.zip
 ```
@@ -133,7 +134,7 @@ validation → pipeline → cli`; `config` is a leaf used by `cli`.
 ## Configuration (priority high → low)
 
 1. CLI flags
-2. Environment variables (`OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`, `PROVIDER=claude`, …)
+2. Environment variables (`OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`, `PROVIDER=bedrock`, …)
 3. `config.yaml` at repo root (auto-loaded if present)
 4. `.env.local`
 5. Built-in defaults in `config/settings.py`
@@ -145,7 +146,8 @@ model and reasoning-effort settings. Pydantic-settings parses the `__` nesting.
 A provider block may carry an optional `_default` key (same level as the agents)
 holding `model` and/or `effort`; a `model_validator(mode="before")` on
 `AgentModels` spreads it across every agent before per-agent defaults are merged.
-Precedence: per-agent value > `_default` > built-in default. As an env override
+For providers without a built-in profile, `_default.model` or an explicit model
+for every agent is required. Precedence: per-agent value > `_default` > built-in default. As an env override
 its leading underscore means a triple: `PROVIDER_MODELS__DEEPSEEK___DEFAULT__MODEL`.
 
 ## Modifying agent behavior
@@ -156,8 +158,8 @@ its leading underscore means a triple: `PROVIDER_MODELS__DEEPSEEK___DEFAULT__MOD
 - **Per-agent reasoning effort** → `provider_models.<provider>.<agent>.effort` in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none), or set a whole block at once with `provider_models.<provider>._default.effort`. Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
 
 `BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
-through any-llm's unified completion API; `claude` maps internally to any-llm's
-`anthropic` provider.
+through any-llm's unified completion API. `provider` is passed through to
+any-llm after the compatibility alias `claude -> anthropic` is applied.
 `_extract_and_repair()` strips code fences and runs `json_repair`.
 
 ## Generated-project conventions (encoded in prompts)

@@ -7,7 +7,7 @@ Thank you for your interest in contributing! This document covers how to set up 
 - [uv](https://docs.astral.sh/uv/) — install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows)
 - Python 3.11+ (`uv sync` installs a suitable interpreter if you don't have one)
 - Docker (required for validation; skip with `--no-validation-loop` during development)
-- An OpenAI API key, or an Anthropic API key when using `--provider claude`; provider calls go through any-llm
+- Credentials for the any-llm provider you plan to use, for example an OpenAI API key, an Anthropic API key, or AWS credentials for Bedrock
 
 ## Development Setup
 
@@ -24,7 +24,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # 4. API key — gitignored, never committed
 cp .env.example .env.local
-# Now open .env.local and set OPENAI_API_KEY=sk-... (add ANTHROPIC_API_KEY for --provider claude)
+# Now open .env.local and set provider credentials, for example OPENAI_API_KEY=sk-...
 
 ```
 
@@ -54,6 +54,7 @@ For shell tab-completion, run `vibesolve --install-completion` once (edits your 
 
 CLI flags override `config.yaml` and environment variables. Run `vibesolve run --help` / `vibesolve batch --help` to see this same list.
 Configure per-agent model IDs and reasoning efforts in `config.yaml` under `provider_models.<provider>.<agent>`, or override one with an environment variable such as `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`. A provider block's optional `_default` key sets the model and/or effort for all its agents at once (per-agent value > `_default` > built-in default).
+Providers without a bundled profile must set `_default.model` or explicitly configure a model for every agent.
 
 ### `vibesolve run [FILE]`
 
@@ -64,7 +65,7 @@ Configure per-agent model IDs and reasoning efforts in `config.yaml` under `prov
 | `--serve` | off | On success, emit `Dockerfile` + `docker-run.sh` into the generated project. |
 | `--user-validate` | off | Pause after parsing to review and correct the spec before code generation. |
 | `--config PATH` | `config.yaml` if present | YAML config file. |
-| `--provider openai\|claude` | `openai` | Compatibility provider name routed through any-llm. |
+| `--provider PROVIDER` | `openai` | any-llm provider name, for example `openai`, `anthropic`, or `bedrock`; `claude` aliases to `anthropic`. |
 | `--reasoning-effort none\|low\|medium\|high` | per-agent config | Override reasoning effort for all agents at once. |
 | `--max-iterations N` | `max_fix_iterations` (10) | Max fixer agent iterations. |
 | `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |
@@ -78,7 +79,7 @@ Configure per-agent model IDs and reasoning efforts in `config.yaml` under `prov
 | `--input-dir PATH` | `user_input` | Directory to scan for `*.txt` files. |
 | `--serve` | off | Emit `Dockerfile` + `docker-run.sh` into each successfully-generated project. |
 | `--config PATH` | `config.yaml` if present | YAML config file. |
-| `--provider openai\|claude` | `openai` | Compatibility provider name routed through any-llm. |
+| `--provider PROVIDER` | `openai` | any-llm provider name, for example `openai`, `anthropic`, or `bedrock`; `claude` aliases to `anthropic`. |
 | `--workers N` | `default_workers` (3) | Number of parallel workers. |
 | `--max-iterations N` | `max_fix_iterations` (10) | Max fixer iterations per problem. |
 | `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |

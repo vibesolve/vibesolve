@@ -25,8 +25,8 @@ source .venv/bin/activate    # Windows: .venv\Scripts\activate
 
 # API key - gitignored, never committed
 cp .env.example .env.local
-# now open .env.local and set OPENAI_API_KEY=sk-...
-# for --provider claude, also set ANTHROPIC_API_KEY=...
+# now open .env.local and set provider credentials, e.g. OPENAI_API_KEY=sk-...
+# for --provider claude/anthropic, set ANTHROPIC_API_KEY=...
 ```
 
 With the environment activated, `vibesolve` is on your `PATH` — no prefix needed. Activation lasts for the shell session; in a fresh shell either re-run `source .venv/bin/activate` or prefix a one-off command with `uv run` (e.g. `uv run vibesolve run`).
@@ -81,7 +81,7 @@ Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTIN
 
 ## Configuration
 
-Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); the CLI compatibility names are `openai` and `claude`, with `claude` mapped to `anthropic`. Per-agent model IDs and reasoning efforts are configured together under `provider_models.<provider>.<agent>`; an optional `_default` key in a provider block sets the model and/or effort for every agent at once, with per-agent entries overriding it.
+Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); use any installed any-llm provider name with `--provider`, with `claude` kept as an alias for `anthropic`. Per-agent model IDs and reasoning efforts are configured under `provider_models.<provider>.<agent>`; custom providers must define `_default.model` or explicitly configure every agent. Per-agent entries override `_default` field by field.
 
 ## Prerequisites
 
@@ -90,7 +90,7 @@ Settings live in `config.yaml` at the project root, loaded automatically. Pass `
 | [uv](https://docs.astral.sh/uv/) | manages the environment and installs Python if needed |
 | Python 3.11+ | `uv sync` installs a suitable version automatically |
 | Docker 20+ | for automated validation; skippable with `--no-validation-loop` |
-| LLM API key | OpenAI, or Anthropic when using `--provider claude`; both are routed through any-llm |
+| LLM API key | Provider-specific credentials for the selected any-llm backend, for example OpenAI API keys, Anthropic API keys, or AWS credentials for Bedrock |
 
 ## How it works
 

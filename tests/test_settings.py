@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 from vibesolve.config.settings import AppSettings, load_settings
 
 
@@ -19,8 +21,8 @@ def test_builtin_defaults(monkeypatch):
     assert settings.enable_docker_validation is True
     assert settings.max_fix_iterations == 10
     assert settings.default_workers == 3
-    assert "openai_api_key" in type(settings).model_fields
-    assert "anthropic_api_key" in type(settings).model_fields
+    assert "openai_api_key" not in type(settings).model_fields
+    assert "anthropic_api_key" not in type(settings).model_fields
     assert "gemini_api_key" not in type(settings).model_fields
     # Nested per-agent model and effort defaults are populated.
     assert settings.provider_models["openai"].parser.model == "gpt-5-mini"
@@ -216,6 +218,47 @@ def test_nested_provider_model_env_overrides_only_matching_yaml_key(tmp_path, mo
     assert settings.provider_models["openai"].fixer.effort == "high"
 
 
+def test_arbitrary_provider_uses_provider_default_and_agent_override(tmp_path, monkeypatch):
+    _clear_provider_model_env(monkeypatch)
+    monkeypatch.delenv("PROVIDER", raising=False)
+
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "provider: bedrock\n"
+        "provider_models:\n"
+        "  bedrock:\n"
+        "    _default:\n"
+        "      model: amazon.nova-lite-v1:0\n"
+        "      effort: none\n"
+        "    fixer:\n"
+        "      model: amazon.nova-pro-v1:0\n"
+        "      effort: high\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config)
+    assert settings.provider == "bedrock"
+    assert settings.provider_models["bedrock"].parser.model == "amazon.nova-lite-v1:0"
+    assert settings.provider_models["bedrock"].fixer.model == "amazon.nova-pro-v1:0"
+    assert settings.provider_models["bedrock"].fixer.effort == "high"
+
+
+def test_partial_arbitrary_provider_without_default_model_is_rejected(tmp_path, monkeypatch):
+    _clear_provider_model_env(monkeypatch)
+
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "provider_models:\n"
+        "  bedrock:\n"
+        "    fixer:\n"
+        "      model: amazon.nova-pro-v1:0\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"provider_models\.bedrock.*missing: parser"):
+        load_settings(config)
+
+
 def test_root_model_keys_are_ignored(tmp_path, monkeypatch):
     _clear_provider_model_env(monkeypatch)
 
@@ -231,3 +274,29 @@ def test_root_model_keys_are_ignored(tmp_path, monkeypatch):
     settings = load_settings(config)
     assert settings.provider_models["openai"].parser.model == "gpt-5-mini"
     assert settings.provider_models["openai"].fixer.model == "gpt-5-mini"
+
+
+def test_nested_non_default_provider_model_env_overrides_only_matching_yaml_key(
+    tmp_path,
+    monkeypatch,
+):
+    _clear_provider_model_env(monkeypatch)
+
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "provider_models:\n"
+        "  bedrock:\n"
+        "    _default:\n"
+        "      model: yaml-default\n"
+        "      effort: none\n"
+        "    fixer:\n"
+        "      model: yaml-fixer\n"
+        "      effort: low\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROVIDER_MODELS__BEDROCK__FIXER__MODEL", "env-fixer")
+
+    settings = load_settings(config)
+    assert settings.provider_models["bedrock"].parser.model == "yaml-default"
+    assert settings.provider_models["bedrock"].fixer.model == "env-fixer"
+    assert settings.provider_models["bedrock"].fixer.effort == "low"

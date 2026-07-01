@@ -6,8 +6,8 @@ Stage-1 compatibility keeps the existing public surface:
     factory = make_caller_factory(settings)   # once, in the CLI
     caller  = factory(log_dir, log)           # once per problem run
 
-The CLI/config provider names remain ``openai`` and ``claude``. Internally,
-``claude`` maps to any-llm's ``anthropic`` provider.
+Provider names are passed through to any-llm. The legacy ``claude`` name is kept
+as a compatibility alias for any-llm's ``anthropic`` provider.
 """
 
 import json
@@ -20,6 +20,7 @@ from typing import Any, Callable, TypeVar, cast
 
 import structlog
 from any_llm.exceptions import UnsupportedParameterError
+from dotenv import load_dotenv
 from json_repair import repair_json
 
 from vibesolve.agents.prompts import load_prompt
@@ -27,10 +28,7 @@ from vibesolve.config.settings import AgentModelConfig, AppSettings
 
 T = TypeVar("T")
 
-_ANY_LLM_PROVIDER: dict[str, str] = {
-    "openai": "openai",
-    "claude": "anthropic",
-}
+_PROVIDER_ALIASES: dict[str, str] = {"claude": "anthropic"}
 _ANTHROPIC_RESPONSE_TOKENS = 8_192
 _ANTHROPIC_REASONING_TOKENS = {
     "none": 0,
@@ -39,6 +37,11 @@ _ANTHROPIC_REASONING_TOKENS = {
     "high": 16_000,
 }
 _ANTHROPIC_TIMEOUT_S = 900.0
+
+
+def _any_llm_provider(provider: str) -> str:
+    normalized = provider.strip().lower()
+    return _PROVIDER_ALIASES.get(normalized, normalized)
 
 
 def _extract_and_repair(text: str) -> str:
@@ -284,13 +287,16 @@ class AnyLLMAgentCaller(BaseAgentCaller):
     ) -> T | str:
         last_exc: Exception | None = None
         structured_unavailable = False
+        raw_schema_unavailable = False
         for attempt in range(1, 4):
             use_structured = model_type is not None and not structured_unavailable
+            use_raw_schema = not use_structured and not raw_schema_unavailable
             try:
                 raw = self._call_once(
                     agent,
                     user_message,
                     model_type=model_type if use_structured else None,
+                    use_raw_schema=use_raw_schema,
                     attempt=attempt,
                 )
             except Exception as exc:
@@ -298,6 +304,15 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                     structured_unavailable = True
                     self._log.warning(
                         "structured_output_fallback",
+                        agent=agent,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
+                    continue
+                if use_raw_schema and _looks_like_response_format_rejection(exc):
+                    raw_schema_unavailable = True
+                    self._log.warning(
+                        "json_schema_output_fallback",
                         agent=agent,
                         attempt=attempt,
                         error=str(exc),
@@ -332,6 +347,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         user_message: str,
         *,
         model_type: type[Any] | None,
+        use_raw_schema: bool,
         attempt: int,
     ) -> str:
         agent_config = self._model_config_for(agent)
@@ -341,7 +357,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         self._log.info("calling_agent", agent=agent, model=model, effort=effort, attempt=attempt)
         t0 = time.time()
 
-        resp = self._call_completion(agent, user_message, model, effort, model_type)
+        resp = self._call_completion(agent, user_message, model, effort, model_type, use_raw_schema)
         content = _extract_and_repair(_response_text(resp))
 
         elapsed = time.time() - t0
@@ -356,8 +372,17 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         return content
 
     def _model_config_for(self, agent: str) -> AgentModelConfig:
-        provider = _ANY_LLM_PROVIDER[self._settings.provider]
-        return self._settings.provider_models[provider].as_dict()[agent]
+        provider = _any_llm_provider(self._settings.provider)
+        provider_models = self._settings.provider_models.get(provider)
+        if provider_models is None:
+            provider_models = self._settings.provider_models.get(self._settings.provider)
+        if provider_models is not None:
+            return provider_models.as_dict()[agent]
+        raise ValueError(
+            f"No model configuration for provider={self._settings.provider!r}. "
+            f"Add provider_models.{provider}._default.model to config.yaml or configure "
+            "a model for every agent."
+        )
 
     def _call_completion(
         self,
@@ -366,6 +391,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         model: str,
         effort: str,
         model_type: type[Any] | None,
+        use_raw_schema: bool,
     ) -> Any:
         api_params: dict[str, Any] = {
             "model": model,
@@ -375,7 +401,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
             ],
             "reasoning_effort": _reasoning_effort(effort),
         }
-        if _ANY_LLM_PROVIDER[self._settings.provider] == "anthropic":
+        if _any_llm_provider(self._settings.provider) == "anthropic":
             # Anthropic counts thinking and response tokens against max_tokens.
             # Preserve the capacity used before the any-llm migration, and set
             # an explicit timeout so its SDK accepts the high-effort ceiling.
@@ -383,9 +409,10 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                 _ANTHROPIC_RESPONSE_TOKENS + _ANTHROPIC_REASONING_TOKENS[effort]
             )
             api_params["timeout"] = _ANTHROPIC_TIMEOUT_S
-        api_params["response_format"] = (
-            model_type if model_type is not None else _raw_json_response_format()
-        )
+        if model_type is not None:
+            api_params["response_format"] = model_type
+        elif use_raw_schema:
+            api_params["response_format"] = _raw_json_response_format()
         return self._client.completion(**api_params)
 
     def _record_usage(self, agent: str, model: str, resp: Any) -> None:
@@ -424,36 +451,20 @@ def make_caller_factory(settings: AppSettings) -> Callable:
     factory once per problem, so provider clients are never shared across
     worker threads.
     """
-    try:
-        any_llm_provider = _ANY_LLM_PROVIDER[settings.provider]
-    except KeyError as exc:
-        supported = "|".join(_ANY_LLM_PROVIDER)
-        raise ValueError(
-            f"Unsupported provider={settings.provider!r}. Supported values: {supported}."
-        ) from exc
+    any_llm_provider = _any_llm_provider(settings.provider)
 
-    api_key = _api_key_for(settings)
-
-    if not api_key:
-        env_name = "OPENAI_API_KEY" if settings.provider == "openai" else "ANTHROPIC_API_KEY"
-        raise ValueError(
-            f"{env_name} is required when provider={settings.provider}. "
-            "Set it in .env.local or as an environment variable."
-        )
+    # AppSettings owns application configuration, not every provider's native
+    # credential schema. Export .env.local without overriding the real process
+    # environment, then let any-llm resolve the selected provider's credentials.
+    load_dotenv(".env.local", override=False)
 
     from any_llm import AnyLLM
 
     def _factory(log_dir: Path, log: structlog.BoundLogger) -> BaseAgentCaller:
-        client = AnyLLM.create(any_llm_provider, api_key=api_key)
+        client = AnyLLM.create(any_llm_provider, api_key=settings.api_key or None)
         return AnyLLMAgentCaller(client=client, settings=settings, log_dir=log_dir, log=log)
 
     return _factory
-
-
-def _api_key_for(settings: AppSettings) -> str:
-    if settings.provider == "openai":
-        return settings.openai_api_key
-    return settings.anthropic_api_key
 
 
 def _looks_like_response_format_rejection(exc: Exception) -> bool:

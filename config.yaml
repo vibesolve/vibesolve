@@ -5,30 +5,32 @@
 #   vibesolve batch --config config.yaml
 #
 # Priority (highest → lowest):
-#   1. CLI flags              (e.g. --provider=claude, --reasoning-effort=high)
-#   2. Environment variables  (e.g. PROVIDER=claude, PROVIDER_MODELS__ANTHROPIC__FIXER__MODEL=claude-sonnet-4-6)
+#   1. CLI flags              (e.g. --provider=bedrock, --reasoning-effort=high)
+#   2. Environment variables  (e.g. PROVIDER=bedrock, PROVIDER_MODELS__BEDROCK___DEFAULT__MODEL=amazon.nova-lite-v1:0)
 #   3. This YAML file
 #   4. Built-in defaults
 
-# LLM provider compatibility name: openai | claude.
-# Internally, claude is routed through any-llm's anthropic provider.
+# any-llm provider name. The legacy value "claude" is accepted as an alias for
+# any-llm's "anthropic" provider.
 provider: openai
 
-# Per-provider model and reasoning-effort overrides. The built-in profiles are
-# keyed as openai and anthropic (`claude` selects the anthropic profile).
+# Per-provider model and reasoning-effort overrides. Provider names are any-llm
+# names after compatibility aliases are applied (`claude` -> `anthropic`).
 # Allowed effort values per agent: none | low | medium | high. Override every
 # agent at once from the CLI with --reasoning-effort.
 # An optional `_default` key in a provider block sets the model and/or effort for
 # every agent at once; per-agent entries override it. Precedence: per-agent value
 # > _default > built-in default.
 provider_models: {}
-#   openai:
+#   bedrock:
 #     _default:
-#       model: gpt-5-mini
+#       model: amazon.nova-lite-v1:0
 #       effort: none
 #     reviewer:
+#       model: amazon.nova-pro-v1:0
 #       effort: medium
 #     fixer:
+#       model: amazon.nova-pro-v1:0
 #       effort: high
 
 # --- General runtime settings ---

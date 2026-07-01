@@ -24,7 +24,7 @@ _DEFAULT_AGENT_EFFORTS: dict[str, EffortLevel] = {
 class AgentModelConfig(BaseModel):
     """Model and reasoning-effort settings for one agent call."""
 
-    model: str
+    model: str = Field(min_length=1)
     effort: EffortLevel = "none"
 
 
@@ -122,12 +122,13 @@ class AppSettings(BaseSettings):
         extra="ignore",
     )
 
-    # Compatibility provider selection. "claude" maps to any-llm's "anthropic".
-    provider: Literal["openai", "claude"] = "openai"
+    # any-llm provider name. The legacy "claude" alias maps to "anthropic" in
+    # the agent client; all other values are passed directly to any-llm.
+    provider: str = "openai"
 
-    # API keys — only the one matching the active provider is required at runtime.
-    openai_api_key: str = ""
-    anthropic_api_key: str = ""
+    # Optional generic API key override. If empty, any-llm falls back to the
+    # provider's own environment variables or credential chain.
+    api_key: str = ""
 
     # Reserved for provider caching support; kept for config compatibility.
     enable_caching: bool = True
@@ -158,7 +159,6 @@ class AppSettings(BaseSettings):
                 merged[provider] = raw_config
                 continue
 
-            base = defaults.get(provider, AgentModels())
             provider_default = raw_config.get("_default")
             if not isinstance(provider_default, dict):
                 provider_default = {}
@@ -167,6 +167,22 @@ class AppSettings(BaseSettings):
                 for key, setting in provider_default.items()
                 if key in {"model", "effort"}
             }
+
+            base = defaults.get(provider)
+            if base is None:
+                default_model = provider_default.get("model")
+                missing_models = [
+                    agent
+                    for agent in AgentModels.model_fields
+                    if not default_model and not _model_is_configured(raw_config.get(agent))
+                ]
+                if missing_models:
+                    missing = ", ".join(missing_models)
+                    raise ValueError(
+                        f"provider_models.{provider} must define _default.model or a model "
+                        f"for every agent; missing: {missing}"
+                    )
+                base = AgentModels()
 
             provider_config: dict[str, object] = {}
             for agent, base_config in base.as_dict().items():
@@ -184,6 +200,12 @@ class AppSettings(BaseSettings):
             merged[provider] = provider_config
 
         return merged
+
+
+def _model_is_configured(value: object) -> bool:
+    if isinstance(value, AgentModelConfig):
+        return bool(value.model)
+    return isinstance(value, dict) and bool(value.get("model"))
 
 
 _DEFAULT_CONFIG = Path("config.yaml")
