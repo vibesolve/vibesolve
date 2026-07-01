@@ -6,18 +6,33 @@ Exposes the `run` command, wired up as `vibesolve run` by `cli/main.py`.
 
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Optional, cast
 
 import typer
 
 from vibesolve.agents.client import make_caller_factory
-from vibesolve.config.settings import AgentEfforts, load_settings
+from vibesolve.config.settings import AppSettings, EffortLevel, load_settings
 from vibesolve.reporting.kpi_tracker import aggregate_token_usage
 from vibesolve.validation.docker_validator import DockerValidator
 from vibesolve.pipeline.runner import run_problem
 from vibesolve.utils import configure_logging
 
 app = typer.Typer(help="Run the Timefold generation pipeline for a single problem.")
+
+_REASONING_EFFORTS = {"none", "low", "medium", "high"}
+
+
+def _with_reasoning_effort(settings: AppSettings, effort: str) -> AppSettings:
+    if effort not in _REASONING_EFFORTS:
+        raise typer.BadParameter("reasoning effort must be one of: none, low, medium, high")
+    return settings.model_copy(
+        update={
+            "provider_models": {
+                provider: models.with_effort(cast(EffortLevel, effort))
+                for provider, models in settings.provider_models.items()
+            }
+        }
+    )
 
 
 @app.command()
@@ -65,8 +80,7 @@ def run(
     if max_iterations is not None:
         settings = settings.model_copy(update={"max_fix_iterations": max_iterations})
     if reasoning_effort is not None:
-        all_agents = {a: reasoning_effort for a in AgentEfforts().as_dict()}
-        settings = settings.model_copy(update={"efforts": AgentEfforts(**all_agents)})
+        settings = _with_reasoning_effort(settings, reasoning_effort)
     if no_validation_loop:
         settings = settings.model_copy(update={"enable_docker_validation": False})
     if provider is not None:

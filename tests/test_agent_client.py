@@ -74,7 +74,9 @@ def test_make_caller_factory_keeps_openai_key_validation_before_import(monkeypat
 
 
 def test_make_caller_factory_rejects_unsupported_provider():
-    settings = AppSettings(openai_api_key="openai-key").model_copy(update={"provider": "ollama"})
+    settings = AppSettings(openai_api_key="openai-key").model_copy(
+        update={"provider": "ollama"}
+    )
 
     with pytest.raises(ValueError, match="Unsupported provider='ollama'"):
         make_caller_factory(settings)
@@ -106,7 +108,7 @@ def test_openai_raw_call_returns_json_and_tracks_tokens(tmp_path):
     assert "max_tokens" not in calls[0]
     assert "timeout" not in calls[0]
     assert caller.agent_tokens["parser"] == {
-        "model": settings.models.parser,
+        "model": settings.provider_models["openai"].parser.model,
         "input_tokens": 10,
         "cached_input_tokens": 2,
         "output_tokens": 3,
@@ -243,7 +245,7 @@ def test_claude_typed_call_falls_back_when_structured_is_rejected(tmp_path):
     assert delta.changed_files[0].path == "pom.xml"
     assert len(calls) == 2
     assert caller.agent_tokens["fixer"] == {
-        "model": settings.claude_models.fixer,
+        "model": settings.provider_models["anthropic"].fixer.model,
         "input_tokens": 6,
         "cached_input_tokens": 2,
         "output_tokens": 3,

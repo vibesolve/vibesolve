@@ -81,7 +81,7 @@ Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTIN
 
 ## Configuration
 
-Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); stage-1 compatibility keeps the existing `openai` and `claude` provider names.
+Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); the CLI compatibility names are `openai` and `claude`, with `claude` mapped to `anthropic`. Per-agent model IDs and reasoning efforts are configured together under `provider_models.<provider>.<agent>`; an optional `_default` key in a provider block sets the model and/or effort for every agent at once, with per-agent entries overriding it.
 
 ## Prerequisites
 
@@ -90,7 +90,7 @@ Settings live in `config.yaml` at the project root, loaded automatically. Pass `
 | [uv](https://docs.astral.sh/uv/) | manages the environment and installs Python if needed |
 | Python 3.11+ | `uv sync` installs a suitable version automatically |
 | Docker 20+ | for automated validation; skippable with `--no-validation-loop` |
-| LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude`; both are used through any-llm |
+| LLM API key | OpenAI, or Anthropic when using `--provider claude`; both are routed through any-llm |
 
 ## How it works
 

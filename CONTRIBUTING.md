@@ -7,7 +7,7 @@ Thank you for your interest in contributing! This document covers how to set up 
 - [uv](https://docs.astral.sh/uv/) — install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows)
 - Python 3.11+ (`uv sync` installs a suitable interpreter if you don't have one)
 - Docker (required for validation; skip with `--no-validation-loop` during development)
-- An OpenAI API key (or an Anthropic key, for `--provider claude`); provider calls go through any-llm
+- An OpenAI API key, or an Anthropic API key when using `--provider claude`; provider calls go through any-llm
 
 ## Development Setup
 
@@ -53,6 +53,7 @@ For shell tab-completion, run `vibesolve --install-completion` once (edits your 
 ## CLI reference
 
 CLI flags override `config.yaml` and environment variables. Run `vibesolve run --help` / `vibesolve batch --help` to see this same list.
+Configure per-agent model IDs and reasoning efforts in `config.yaml` under `provider_models.<provider>.<agent>`, or override one with an environment variable such as `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`. A provider block's optional `_default` key sets the model and/or effort for all its agents at once (per-agent value > `_default` > built-in default).
 
 ### `vibesolve run [FILE]`
 

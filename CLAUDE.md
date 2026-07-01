@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Multi-agent system that generates complete Timefold Solver projects from natural language problem descriptions. Uses OpenAI API with a sequential pipeline (up to 9 agents) where each agent specializes in one aspect of code generation. Generated projects are validated via Docker (Maven compile + execution) and automatically fixed by a feedback loop. An optional interactive user-validation step lets users review and correct the parsed problem spec before code generation begins.
+Multi-agent system that generates complete Timefold Solver projects from natural language problem descriptions. LLM calls go through any-llm with a sequential pipeline (up to 9 agents) where each agent specializes in one aspect of code generation. Generated projects are validated via Docker (Maven compile + execution) and automatically fixed by a feedback loop. An optional interactive user-validation step lets users review and correct the parsed problem spec before code generation begins.
 
 ## Setup
 
@@ -20,7 +20,7 @@ uv sync --extra dev
 # Activate it — once per shell; puts `vibesolve` and `pytest` on PATH
 source .venv/bin/activate
 
-# Configure API key
+# Configure API keys
 # Create .env.local with OPENAI_API_KEY=your-key
 
 # Build the Docker validator image (first run only)
@@ -109,7 +109,7 @@ The pipeline never starts Docker itself; it only writes files. You control when 
 Settings are resolved in this priority order (highest → lowest):
 
 1. **CLI flags** — `--max-iterations`, `--workers`, `--reasoning-effort`, `--no-validation-loop`, `--serve`, `--user-validate`
-2. **Environment variables** — `OPENAI_API_KEY`, `MODELS__FIXER`, …
+2. **Environment variables** — `OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL`, …
 3. **YAML config file** — `config.yaml` (auto-loaded if present) or `--config <path>`
 4. **`.env.local`** — API key fallback
 5. **Built-in defaults**
@@ -131,32 +131,57 @@ enable_docker_validation: true
 max_fix_iterations: 10
 default_workers: 3
 
-# Per-agent reasoning effort (low | medium | high). Applies to both
-# providers. --reasoning-effort overrides every agent at once.
-efforts:
-  parser:                  low
-  model_builder:           low
-  constraint_builder:      low
-  io:                      low
-  integrator:              low
-  reviewer:                medium
-  fixer:                   high
-  user_validator_explain:  low
-  user_validator_update:   low
+# Provider compatibility name: openai or claude (`claude` maps to anthropic).
+provider: openai
 
-models:
-  parser:                  gpt-5-mini
-  model_builder:           gpt-5-mini
-  constraint_builder:      gpt-5-mini
-  io:                      gpt-5-mini
-  integrator:              gpt-5-mini
-  reviewer:                gpt-5-mini
-  fixer:                   gpt-5-mini
-  user_validator_explain:  gpt-5-mini   # --user-validate: generates spec summary
-  user_validator_update:   gpt-5-mini   # --user-validate: applies user feedback
+# Per-agent model and reasoning effort (none | low | medium | high).
+# --reasoning-effort overrides every agent's effort at once.
+#
+# An optional `_default` key sets the model and/or effort for every agent in a
+# provider block; per-agent entries override it field-by-field. Precedence:
+# per-agent value > _default > built-in default. The openai block below uses it
+# to set one model and only override the two agents that raise their effort;
+# anthropic is shown expanded for contrast.
+provider_models:
+  openai:
+    _default:
+      model: gpt-5-mini
+      effort: none
+    reviewer:
+      effort: medium
+    fixer:
+      effort: high
+  anthropic:
+    parser:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    model_builder:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    constraint_builder:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    io:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    integrator:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    reviewer:
+      model: claude-sonnet-4-6
+      effort: medium
+    fixer:
+      model: claude-sonnet-4-6
+      effort: high
+    user_validator_explain:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    user_validator_update:
+      model: claude-haiku-4-5-20251001
+      effort: none
 ```
 
-Keep `OPENAI_API_KEY` in `.env.local` — never put it in `config.yaml`.
+Keep `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` in `.env.local` — never put secrets in `config.yaml`.
 
 ## Architecture
 
@@ -275,7 +300,7 @@ agents_arch/
 │   └── pom-warmup.xml           # Pre-bakes Maven deps into Docker image
 ├── user_input/                  # Problem description .txt files
 ├── pyproject.toml               # Package metadata + CLI entry points
-└── .env.local                   # OPENAI_API_KEY (not committed)
+└── .env.local                   # OPENAI_API_KEY / ANTHROPIC_API_KEY (not committed)
 ```
 
 ## Docker Validation & Feedback Loop

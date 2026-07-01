@@ -28,7 +28,10 @@ docker build -t timefold-validator docker/   # pre-bakes Maven deps into the val
 
 Python 3.11+ is required (modern type annotations). Every command in this file assumes the venv is activated; without activation, prefix with `uv run` (e.g. `uv run pytest`). If uv cannot find a suitable Python, install one with `uv python install 3.13`.
 
-For the Anthropic/Claude provider, add `ANTHROPIC_API_KEY=...` to `.env.local` and pass `--provider claude` (or set it in `config.yaml`).
+Provider calls go through any-llm. Select `openai` or `claude` with
+`--provider`; the compatibility value `claude` maps to any-llm's `anthropic`
+provider. Put the matching `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in
+`.env.local`.
 
 Make sure the Docker daemon is running before the `docker build` (Linux:
 `sudo systemctl start docker`; macOS/Windows: launch Docker Desktop).
@@ -55,7 +58,7 @@ Flags shared by both subcommands:
 
 `run` only:
 
-- `--reasoning-effort none|low|medium|high` — overrides every agent's effort at once (per-agent defaults live in the `efforts:` config block; see below)
+- `--reasoning-effort none|low|medium|high` — overrides every agent's effort at once (per-agent defaults live beside model names in `provider_models:`; see below)
 - `--user-validate` — pause after parsing to let the user review/correct the `ProblemSpec` interactively before code generation
 
 `batch` only:
@@ -130,25 +133,32 @@ validation → pipeline → cli`; `config` is a leaf used by `cli`.
 ## Configuration (priority high → low)
 
 1. CLI flags
-2. Environment variables (`OPENAI_API_KEY`, `MODELS__FIXER=gpt-5`, `PROVIDER=claude`, …)
+2. Environment variables (`OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`, `PROVIDER=claude`, …)
 3. `config.yaml` at repo root (auto-loaded if present)
 4. `.env.local`
 5. Built-in defaults in `config/settings.py`
 
-`MODELS__<AGENT>` and `CLAUDE_MODELS__<AGENT>` env vars override per-agent model
-names — pydantic-settings parses the `__` nesting.
+`PROVIDER_MODELS__<PROVIDER>__<AGENT>__MODEL` and
+`PROVIDER_MODELS__<PROVIDER>__<AGENT>__EFFORT` env vars override per-agent
+model and reasoning-effort settings. Pydantic-settings parses the `__` nesting.
+
+A provider block may carry an optional `_default` key (same level as the agents)
+holding `model` and/or `effort`; a `model_validator(mode="before")` on
+`AgentModels` spreads it across every agent before per-agent defaults are merged.
+Precedence: per-agent value > `_default` > built-in default. As an env override
+its leading underscore means a triple: `PROVIDER_MODELS__DEEPSEEK___DEFAULT__MODEL`.
 
 ## Modifying agent behavior
 
 - **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
-- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add a model default in `config/settings.py:AgentModels` (and `ClaudeAgentModels`), and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
+- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add the agent to `config/settings.py:AgentModels` and each default `provider_models` entry with `model` and `effort`, and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
-- **Per-agent reasoning effort** → `config/settings.py:AgentEfforts` and the `efforts:` block in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none). Read in `agents/client.py` via `settings.efforts.as_dict()[agent]`; `--reasoning-effort` overrides every agent at once.
+- **Per-agent reasoning effort** → `provider_models.<provider>.<agent>.effort` in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none), or set a whole block at once with `provider_models.<provider>._default.effort`. Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
 
 `BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
-through any-llm's unified completion API; stage-1 compatibility keeps
-`provider=openai|claude`, with `claude` mapped internally to any-llm's Anthropic
-provider. `_extract_and_repair()` strips code fences and runs `json_repair`.
+through any-llm's unified completion API; `claude` maps internally to any-llm's
+`anthropic` provider.
+`_extract_and_repair()` strips code fences and runs `json_repair`.
 
 ## Generated-project conventions (encoded in prompts)
 

@@ -23,7 +23,7 @@ from any_llm.exceptions import UnsupportedParameterError
 from json_repair import repair_json
 
 from vibesolve.agents.prompts import load_prompt
-from vibesolve.config.settings import AppSettings
+from vibesolve.config.settings import AgentModelConfig, AppSettings
 
 T = TypeVar("T")
 
@@ -39,6 +39,7 @@ _ANTHROPIC_REASONING_TOKENS = {
     "high": 16_000,
 }
 _ANTHROPIC_TIMEOUT_S = 900.0
+
 
 def _extract_and_repair(text: str) -> str:
     """
@@ -333,8 +334,9 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         model_type: type[Any] | None,
         attempt: int,
     ) -> str:
-        model = self._model_for(agent)
-        effort = self._settings.efforts.as_dict()[agent]
+        agent_config = self._model_config_for(agent)
+        model = agent_config.model
+        effort = agent_config.effort
 
         self._log.info("calling_agent", agent=agent, model=model, effort=effort, attempt=attempt)
         t0 = time.time()
@@ -353,10 +355,9 @@ class AnyLLMAgentCaller(BaseAgentCaller):
 
         return content
 
-    def _model_for(self, agent: str) -> str:
-        if self._settings.provider == "openai":
-            return self._settings.models.as_dict()[agent]
-        return self._settings.claude_models.as_dict()[agent]
+    def _model_config_for(self, agent: str) -> AgentModelConfig:
+        provider = _ANY_LLM_PROVIDER[self._settings.provider]
+        return self._settings.provider_models[provider].as_dict()[agent]
 
     def _call_completion(
         self,
@@ -372,7 +373,6 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                 {"role": "system", "content": load_prompt(agent)},
                 {"role": "user", "content": user_message},
             ],
-            "response_format": model_type if model_type is not None else _raw_json_response_format(),
             "reasoning_effort": _reasoning_effort(effort),
         }
         if _ANY_LLM_PROVIDER[self._settings.provider] == "anthropic":
@@ -383,6 +383,9 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                 _ANTHROPIC_RESPONSE_TOKENS + _ANTHROPIC_REASONING_TOKENS[effort]
             )
             api_params["timeout"] = _ANTHROPIC_TIMEOUT_S
+        api_params["response_format"] = (
+            model_type if model_type is not None else _raw_json_response_format()
+        )
         return self._client.completion(**api_params)
 
     def _record_usage(self, agent: str, model: str, resp: Any) -> None:
