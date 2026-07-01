@@ -98,9 +98,9 @@ class AppSettings(BaseSettings):
     # Per-agent reasoning effort (applies to whichever any-llm provider is active)
     efforts: AgentEfforts = Field(default_factory=AgentEfforts)
 
-    # Model configuration. ``models`` is used for the active provider unless a
-    # matching ``provider_models.<provider>`` entry exists. ``claude_models`` is
-    # kept as a compatibility alias for provider=claude/anthropic.
+    # Model configuration. ``provider_models.<provider>`` is the preferred
+    # config shape. ``models`` and ``claude_models`` are kept as built-in
+    # defaults and compatibility aliases for older config files.
     models: AgentModels = Field(default_factory=AgentModels)
     claude_models: ClaudeAgentModels = Field(default_factory=ClaudeAgentModels)
     provider_models: dict[str, AgentModels] = Field(default_factory=dict)
@@ -164,7 +164,8 @@ def load_settings(config_file: Path | None = None) -> "AppSettings":
 
     # Init kwargs have higher priority than env vars in pydantic-settings. For
     # nested sections supplied by YAML, merge the specific nested env override
-    # into the YAML dict so siblings keep their YAML values.
+    # into the YAML dict so siblings keep their YAML values. MODELS__* and
+    # CLAUDE_MODELS__* are legacy shortcuts; prefer PROVIDER_MODELS__*.
     _merge_nested_env("models", "MODELS__")
     _merge_nested_env("claude_models", "CLAUDE_MODELS__")
     _merge_nested_env("efforts", "EFFORTS__")

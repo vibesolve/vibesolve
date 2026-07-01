@@ -49,19 +49,20 @@ def test_env_var_overrides_yaml(tmp_path, monkeypatch):
     assert settings.max_fix_iterations == 42
 
 
-def test_nested_env_var_overrides_only_matching_yaml_key(tmp_path, monkeypatch):
+def test_nested_provider_model_env_overrides_only_matching_yaml_key(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text(
-        "models:\n"
-        "  parser: yaml-parser\n"
-        "  fixer: yaml-fixer\n",
+        "provider_models:\n"
+        "  openai:\n"
+        "    parser: yaml-parser\n"
+        "    fixer: yaml-fixer\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("MODELS__FIXER", "env-fixer")
+    monkeypatch.setenv("PROVIDER_MODELS__OPENAI__FIXER", "env-fixer")
 
     settings = load_settings(config)
-    assert settings.models.parser == "yaml-parser"
-    assert settings.models.fixer == "env-fixer"
+    assert settings.provider_models["openai"].parser == "yaml-parser"
+    assert settings.provider_models["openai"].fixer == "env-fixer"
 
 
 def test_arbitrary_provider_and_provider_model_overrides(tmp_path, monkeypatch):
@@ -84,7 +85,22 @@ def test_arbitrary_provider_and_provider_model_overrides(tmp_path, monkeypatch):
     assert settings.provider_models["bedrock"].fixer == "amazon.nova-pro-v1:0"
 
 
-def test_nested_provider_model_env_overrides_only_matching_yaml_key(tmp_path, monkeypatch):
+def test_legacy_root_model_env_overrides_still_work(tmp_path, monkeypatch):
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "models:\n"
+        "  parser: yaml-parser\n"
+        "  fixer: yaml-fixer\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MODELS__FIXER", "env-fixer")
+
+    settings = load_settings(config)
+    assert settings.models.parser == "yaml-parser"
+    assert settings.models.fixer == "env-fixer"
+
+
+def test_nested_non_default_provider_model_env_overrides_only_matching_yaml_key(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text(
         "provider_models:\n"

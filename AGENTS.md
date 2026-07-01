@@ -134,14 +134,14 @@ validation → pipeline → cli`; `config` is a leaf used by `cli`.
 ## Configuration (priority high → low)
 
 1. CLI flags
-2. Environment variables (`OPENAI_API_KEY`, `MODELS__FIXER=gpt-5`, `PROVIDER=bedrock`, …)
+2. Environment variables (`OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER=gpt-5`, `PROVIDER=bedrock`, …)
 3. `config.yaml` at repo root (auto-loaded if present)
 4. `.env.local`
 5. Built-in defaults in `config/settings.py`
 
-`MODELS__<AGENT>`, `CLAUDE_MODELS__<AGENT>`, and
-`PROVIDER_MODELS__<PROVIDER>__<AGENT>` env vars override per-agent model names —
-pydantic-settings parses the `__` nesting.
+`PROVIDER_MODELS__<PROVIDER>__<AGENT>` env vars override per-agent model names.
+Legacy `MODELS__<AGENT>` and `CLAUDE_MODELS__<AGENT>` overrides still work for
+older config files. Pydantic-settings parses the `__` nesting.
 
 ## Modifying agent behavior
 
