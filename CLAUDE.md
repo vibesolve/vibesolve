@@ -109,7 +109,7 @@ The pipeline never starts Docker itself; it only writes files. You control when 
 Settings are resolved in this priority order (highest → lowest):
 
 1. **CLI flags** — `--max-iterations`, `--workers`, `--reasoning-effort`, `--no-validation-loop`, `--serve`, `--user-validate`
-2. **Environment variables** — `OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER`, …
+2. **Environment variables** — `OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL`, …
 3. **YAML config file** — `config.yaml` (auto-loaded if present) or `--config <path>`
 4. **`.env.local`** — API key fallback
 5. **Built-in defaults**
@@ -134,40 +134,65 @@ default_workers: 3
 # any-llm provider name. `claude` aliases to `anthropic`.
 provider: openai
 
-# Per-agent reasoning effort (none | low | medium | high).
-# --reasoning-effort overrides every agent at once.
-efforts:
-  parser:                  none
-  model_builder:           none
-  constraint_builder:      none
-  io:                      none
-  integrator:              none
-  reviewer:                medium
-  fixer:                   high
-  user_validator_explain:  none
-  user_validator_update:   none
-
+# Per-agent model and reasoning effort (none | low | medium | high).
+# --reasoning-effort overrides every agent's effort at once.
 provider_models:
   openai:
-    parser:                  gpt-5-mini
-    model_builder:           gpt-5-mini
-    constraint_builder:      gpt-5-mini
-    io:                      gpt-5-mini
-    integrator:              gpt-5-mini
-    reviewer:                gpt-5-mini
-    fixer:                   gpt-5-mini
-    user_validator_explain:  gpt-5-mini
-    user_validator_update:   gpt-5-mini
+    parser:
+      model: gpt-5-mini
+      effort: none
+    model_builder:
+      model: gpt-5-mini
+      effort: none
+    constraint_builder:
+      model: gpt-5-mini
+      effort: none
+    io:
+      model: gpt-5-mini
+      effort: none
+    integrator:
+      model: gpt-5-mini
+      effort: none
+    reviewer:
+      model: gpt-5-mini
+      effort: medium
+    fixer:
+      model: gpt-5-mini
+      effort: high
+    user_validator_explain:
+      model: gpt-5-mini
+      effort: none
+    user_validator_update:
+      model: gpt-5-mini
+      effort: none
   anthropic:
-    parser:                  claude-haiku-4-5-20251001
-    model_builder:           claude-haiku-4-5-20251001
-    constraint_builder:      claude-haiku-4-5-20251001
-    io:                      claude-haiku-4-5-20251001
-    integrator:              claude-haiku-4-5-20251001
-    reviewer:                claude-sonnet-4-6
-    fixer:                   claude-sonnet-4-6
-    user_validator_explain:  claude-haiku-4-5-20251001
-    user_validator_update:   claude-haiku-4-5-20251001
+    parser:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    model_builder:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    constraint_builder:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    io:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    integrator:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    reviewer:
+      model: claude-sonnet-4-6
+      effort: medium
+    fixer:
+      model: claude-sonnet-4-6
+      effort: high
+    user_validator_explain:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    user_validator_update:
+      model: claude-haiku-4-5-20251001
+      effort: none
 ```
 
 Keep provider credentials in `.env.local` or provider-native credential stores — never put secrets in `config.yaml`.

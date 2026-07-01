@@ -117,7 +117,7 @@ benchmarking ──────────────────────�
 |---|---|
 | **Delta-based output** | Agents return only changed files, not the full manifest. Saves 60–80% of output tokens on later pipeline stages. |
 | **Typed Pydantic models** | All inter-agent data (`ProblemSpec`, `ProjectManifest`, `Delta`) is validated at parse time — no `dict[str, Any]` at boundaries. |
-| **Provider-agnostic agent caller** | A common `BaseAgentCaller` interface fronts any-llm. `--provider` accepts any installed any-llm provider name; `claude` remains an alias for `anthropic`. Per-provider model IDs live under `provider_models.<provider>`. |
+| **Provider-agnostic agent caller** | A common `BaseAgentCaller` interface fronts any-llm. `--provider` accepts any installed any-llm provider name; `claude` remains an alias for `anthropic`. Per-provider model IDs and reasoning efforts live under `provider_models.<provider>.<agent>`. |
 | **Structured JSON output** | Agents request structured JSON through any-llm when supported, then fall back to raw JSON extraction/repair for providers that reject structured `response_format`. |
 | **Persistent Docker container** | The validator container stays running between iterations, keeping the Maven cache warm. Cold start ~30 s; subsequent compiles ~5–10 s. |
 | **Incremental Maven compile** | `mvn clean` is skipped when only `.java` files changed (not `pom.xml`), cutting iteration time significantly. |

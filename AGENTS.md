@@ -59,7 +59,7 @@ Flags shared by both subcommands:
 
 `run` only:
 
-- `--reasoning-effort none|low|medium|high` — overrides every agent's effort at once (per-agent defaults live in the `efforts:` config block; see below)
+- `--reasoning-effort none|low|medium|high` — overrides every agent's effort at once (per-agent defaults live beside model names in `provider_models:`; see below)
 - `--user-validate` — pause after parsing to let the user review/correct the `ProblemSpec` interactively before code generation
 
 `batch` only:
@@ -134,20 +134,21 @@ validation → pipeline → cli`; `config` is a leaf used by `cli`.
 ## Configuration (priority high → low)
 
 1. CLI flags
-2. Environment variables (`OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER=gpt-5`, `PROVIDER=bedrock`, …)
+2. Environment variables (`OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`, `PROVIDER=bedrock`, …)
 3. `config.yaml` at repo root (auto-loaded if present)
 4. `.env.local`
 5. Built-in defaults in `config/settings.py`
 
-`PROVIDER_MODELS__<PROVIDER>__<AGENT>` env vars override per-agent model names.
-Pydantic-settings parses the `__` nesting.
+`PROVIDER_MODELS__<PROVIDER>__<AGENT>__MODEL` and
+`PROVIDER_MODELS__<PROVIDER>__<AGENT>__EFFORT` env vars override per-agent
+model and reasoning-effort settings. Pydantic-settings parses the `__` nesting.
 
 ## Modifying agent behavior
 
 - **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
-- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add the agent to `config/settings.py:AgentModels` and each default `provider_models` entry, and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
+- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add the agent to `config/settings.py:AgentModels` and each default `provider_models` entry with `model` and `effort`, and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
-- **Per-agent reasoning effort** → `config/settings.py:AgentEfforts` and the `efforts:` block in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none). Read in `agents/client.py` via `settings.efforts.as_dict()[agent]`; `--reasoning-effort` overrides every agent at once.
+- **Per-agent reasoning effort** → `provider_models.<provider>.<agent>.effort` in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none). Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
 
 `BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
 through any-llm's unified completion API. `provider` is passed through to

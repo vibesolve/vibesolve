@@ -22,7 +22,7 @@ import structlog
 from json_repair import repair_json
 
 from vibesolve.agents.prompts import load_prompt
-from vibesolve.config.settings import AppSettings
+from vibesolve.config.settings import AgentModelConfig, AppSettings
 
 T = TypeVar("T")
 
@@ -334,8 +334,9 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         use_raw_schema: bool,
         attempt: int,
     ) -> str:
-        model = self._model_for(agent)
-        effort = self._settings.efforts.as_dict()[agent]
+        agent_config = self._model_config_for(agent)
+        model = agent_config.model
+        effort = agent_config.effort
 
         self._log.info("calling_agent", agent=agent, model=model, effort=effort, attempt=attempt)
         t0 = time.time()
@@ -354,7 +355,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
 
         return content
 
-    def _model_for(self, agent: str) -> str:
+    def _model_config_for(self, agent: str) -> AgentModelConfig:
         provider = _any_llm_provider(self._settings.provider)
         provider_models = self._settings.provider_models.get(provider)
         if provider_models is None:
@@ -363,8 +364,8 @@ class AnyLLMAgentCaller(BaseAgentCaller):
             return provider_models.as_dict()[agent]
         raise ValueError(
             f"No model configuration for provider={self._settings.provider!r}. "
-            f"Add provider_models.{provider}.{agent} to config.yaml or set "
-            f"PROVIDER_MODELS__{provider.upper()}__{agent.upper()}."
+            f"Add provider_models.{provider}.{agent}.model to config.yaml or set "
+            f"PROVIDER_MODELS__{provider.upper()}__{agent.upper()}__MODEL."
         )
 
     def _call_completion(

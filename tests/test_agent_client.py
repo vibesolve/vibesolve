@@ -21,6 +21,22 @@ def _caller(tmp_path, client, settings: AppSettings) -> AnyLLMAgentCaller:
     )
 
 
+def _bedrock_provider_models(fixer_effort: str = "high") -> dict[str, dict[str, dict[str, str]]]:
+    return {
+        "bedrock": {
+            "parser": {"model": "unused-parser", "effort": "none"},
+            "model_builder": {"model": "unused-model-builder", "effort": "none"},
+            "constraint_builder": {"model": "unused-constraint-builder", "effort": "none"},
+            "io": {"model": "unused-io", "effort": "none"},
+            "integrator": {"model": "unused-integrator", "effort": "none"},
+            "reviewer": {"model": "unused-reviewer", "effort": "medium"},
+            "fixer": {"model": "amazon.nova-pro-v1:0", "effort": fixer_effort},
+            "user_validator_explain": {"model": "unused-explain", "effort": "none"},
+            "user_validator_update": {"model": "unused-update", "effort": "none"},
+        }
+    }
+
+
 def test_make_caller_factory_maps_claude_to_any_llm_anthropic(monkeypatch, tmp_path):
     created: list[tuple[str, str | None]] = []
 
@@ -114,7 +130,7 @@ def test_openai_raw_call_returns_json_and_tracks_tokens(tmp_path):
     assert calls[0]["response_format"]["type"] == "json_schema"
     assert calls[0]["reasoning_effort"] is None
     assert caller.agent_tokens["parser"] == {
-        "model": settings.provider_models["openai"].parser,
+        "model": settings.provider_models["openai"].parser.model,
         "input_tokens": 10,
         "cached_input_tokens": 2,
         "output_tokens": 3,
@@ -228,7 +244,7 @@ def test_claude_typed_call_falls_back_when_structured_is_rejected(tmp_path):
     assert delta.changed_files[0].path == "pom.xml"
     assert len(calls) == 2
     assert caller.agent_tokens["fixer"] == {
-        "model": settings.provider_models["anthropic"].fixer,
+        "model": settings.provider_models["anthropic"].fixer.model,
         "input_tokens": 6,
         "cached_input_tokens": 2,
         "output_tokens": 3,
@@ -247,19 +263,7 @@ def test_provider_model_overrides_are_keyed_by_any_llm_provider(tmp_path):
 
     settings = AppSettings(
         provider="bedrock",
-        provider_models={
-            "bedrock": {
-                "parser": "unused-parser",
-                "model_builder": "unused-model-builder",
-                "constraint_builder": "unused-constraint-builder",
-                "io": "unused-io",
-                "integrator": "unused-integrator",
-                "reviewer": "unused-reviewer",
-                "fixer": "amazon.nova-pro-v1:0",
-                "user_validator_explain": "unused-explain",
-                "user_validator_update": "unused-update",
-            }
-        },
+        provider_models=_bedrock_provider_models(),
     )
     caller = _caller(tmp_path, FakeClient(), settings)
 
@@ -289,19 +293,7 @@ def test_typed_call_falls_back_when_provider_rejects_all_response_formats(tmp_pa
 
     settings = AppSettings(
         provider="bedrock",
-        provider_models={
-            "bedrock": {
-                "parser": "unused-parser",
-                "model_builder": "unused-model-builder",
-                "constraint_builder": "unused-constraint-builder",
-                "io": "unused-io",
-                "integrator": "unused-integrator",
-                "reviewer": "unused-reviewer",
-                "fixer": "amazon.nova-pro-v1:0",
-                "user_validator_explain": "unused-explain",
-                "user_validator_update": "unused-update",
-            }
-        },
+        provider_models=_bedrock_provider_models(),
     )
     caller = _caller(tmp_path, FakeClient(), settings)
 

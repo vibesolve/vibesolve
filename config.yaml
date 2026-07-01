@@ -6,7 +6,7 @@
 #
 # Priority (highest → lowest):
 #   1. CLI flags              (e.g. --provider=bedrock, --reasoning-effort=high)
-#   2. Environment variables  (e.g. PROVIDER=bedrock, PROVIDER_MODELS__BEDROCK__FIXER=amazon.nova-pro-v1:0)
+#   2. Environment variables  (e.g. PROVIDER=bedrock, PROVIDER_MODELS__BEDROCK__FIXER__MODEL=amazon.nova-pro-v1:0)
 #   3. This YAML file
 #   4. Built-in defaults
 
@@ -19,54 +19,95 @@ provider: openai
 # chains such as AWS_PROFILE/AWS_REGION for Bedrock.
 # api_key:
 
-# Per-agent reasoning effort (applies to whichever any-llm provider is active).
-# Allowed values per agent: none | low | medium | high
-# Override every agent at once from the CLI with --reasoning-effort.
-efforts:
-  parser:                  none
-  model_builder:           none
-  constraint_builder:      none
-  io:                      none
-  integrator:              none
-  reviewer:                medium
-  fixer:                   high
-  user_validator_explain:  none
-  user_validator_update:   none
-
-# Per-provider model overrides. If an entry exists for the active provider, it
-# wins over built-in fallback defaults. Provider names are any-llm names after
-# compatibility aliases are applied (`claude` -> `anthropic`).
+# Per-provider model and reasoning-effort overrides. Provider names are any-llm
+# names after compatibility aliases are applied (`claude` -> `anthropic`).
+# Allowed effort values per agent: none | low | medium | high. Override every
+# agent at once from the CLI with --reasoning-effort.
 provider_models:
   openai:
-    parser:                  gpt-5-mini
-    model_builder:           gpt-5-mini
-    constraint_builder:      gpt-5-mini
-    io:                      gpt-5-mini
-    integrator:              gpt-5-mini
-    reviewer:                gpt-5-mini
-    fixer:                   gpt-5-mini
-    user_validator_explain:  gpt-5-mini
-    user_validator_update:   gpt-5-mini
+    parser:
+      model: gpt-5-mini
+      effort: none
+    model_builder:
+      model: gpt-5-mini
+      effort: none
+    constraint_builder:
+      model: gpt-5-mini
+      effort: none
+    io:
+      model: gpt-5-mini
+      effort: none
+    integrator:
+      model: gpt-5-mini
+      effort: none
+    reviewer:
+      model: gpt-5-mini
+      effort: medium
+    fixer:
+      model: gpt-5-mini
+      effort: high
+    user_validator_explain:
+      model: gpt-5-mini
+      effort: none
+    user_validator_update:
+      model: gpt-5-mini
+      effort: none
   anthropic:
-    parser:                  claude-haiku-4-5-20251001
-    model_builder:           claude-haiku-4-5-20251001
-    constraint_builder:      claude-haiku-4-5-20251001
-    io:                      claude-haiku-4-5-20251001
-    integrator:              claude-haiku-4-5-20251001
-    reviewer:                claude-sonnet-4-6
-    fixer:                   claude-sonnet-4-6
-    user_validator_explain:  claude-haiku-4-5-20251001
-    user_validator_update:   claude-haiku-4-5-20251001
+    parser:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    model_builder:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    constraint_builder:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    io:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    integrator:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    reviewer:
+      model: claude-sonnet-4-6
+      effort: medium
+    fixer:
+      model: claude-sonnet-4-6
+      effort: high
+    user_validator_explain:
+      model: claude-haiku-4-5-20251001
+      effort: none
+    user_validator_update:
+      model: claude-haiku-4-5-20251001
+      effort: none
 #   bedrock:
-#     parser:                  amazon.nova-lite-v1:0
-#     model_builder:           amazon.nova-lite-v1:0
-#     constraint_builder:      amazon.nova-lite-v1:0
-#     io:                      amazon.nova-lite-v1:0
-#     integrator:              amazon.nova-lite-v1:0
-#     reviewer:                amazon.nova-pro-v1:0
-#     fixer:                   amazon.nova-pro-v1:0
-#     user_validator_explain:  amazon.nova-lite-v1:0
-#     user_validator_update:   amazon.nova-lite-v1:0
+#     parser:
+#       model: amazon.nova-lite-v1:0
+#       effort: none
+#     model_builder:
+#       model: amazon.nova-lite-v1:0
+#       effort: none
+#     constraint_builder:
+#       model: amazon.nova-lite-v1:0
+#       effort: none
+#     io:
+#       model: amazon.nova-lite-v1:0
+#       effort: none
+#     integrator:
+#       model: amazon.nova-lite-v1:0
+#       effort: none
+#     reviewer:
+#       model: amazon.nova-pro-v1:0
+#       effort: medium
+#     fixer:
+#       model: amazon.nova-pro-v1:0
+#       effort: high
+#     user_validator_explain:
+#       model: amazon.nova-lite-v1:0
+#       effort: none
+#     user_validator_update:
+#       model: amazon.nova-lite-v1:0
+#       effort: none
 
 # --- General runtime settings ---
 

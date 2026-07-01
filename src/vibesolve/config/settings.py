@@ -1,69 +1,93 @@
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+EffortLevel = Literal["none", "low", "medium", "high"]
+
+_DEFAULT_AGENT_EFFORTS: dict[str, EffortLevel] = {
+    "parser": "none",
+    "model_builder": "none",
+    "constraint_builder": "none",
+    "io": "none",
+    "integrator": "none",
+    "reviewer": "medium",
+    "fixer": "high",
+    "user_validator_explain": "none",
+    "user_validator_update": "none",
+}
+
+
+class AgentModelConfig(BaseModel):
+    """Model and reasoning-effort settings for one agent call."""
+
+    model: str
+    effort: EffortLevel = "none"
+
+
 class AgentModels(BaseModel):
-    """Model names per agent for the active LLM provider."""
+    """Per-agent model settings for one any-llm provider."""
 
-    parser: str = "gpt-5-mini"
-    model_builder: str = "gpt-5-mini"
-    constraint_builder: str = "gpt-5-mini"
-    io: str = "gpt-5-mini"
-    integrator: str = "gpt-5-mini"
-    reviewer: str = "gpt-5-mini"
-    fixer: str = "gpt-5-mini"
-    user_validator_explain: str = "gpt-5-mini"
-    user_validator_update: str = "gpt-5-mini"
+    parser: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("parser"))
+    model_builder: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("model_builder"))
+    constraint_builder: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("constraint_builder"))
+    io: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("io"))
+    integrator: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("integrator"))
+    reviewer: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("reviewer"))
+    fixer: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("fixer"))
+    user_validator_explain: AgentModelConfig = Field(
+        default_factory=lambda: _default_agent_model("user_validator_explain")
+    )
+    user_validator_update: AgentModelConfig = Field(
+        default_factory=lambda: _default_agent_model("user_validator_update")
+    )
 
-    def as_dict(self) -> dict[str, str]:
-        return self.model_dump()
+    @field_validator("*", mode="before")
+    @classmethod
+    def _merge_agent_defaults(cls, value: object, info: ValidationInfo) -> object:
+        if isinstance(value, dict) and info.field_name is not None:
+            default = _default_agent_model(info.field_name)
+            return {**default.model_dump(), **value}
+        return value
+
+    def as_dict(self) -> dict[str, AgentModelConfig]:
+        return {agent: getattr(self, agent) for agent in type(self).model_fields}
+
+    def with_effort(self, effort: EffortLevel) -> Self:
+        return self.model_copy(
+            update={
+                agent: AgentModelConfig(model=config.model, effort=effort)
+                for agent, config in self.as_dict().items()
+            }
+        )
+
+
+def _default_agent_model(agent: str) -> AgentModelConfig:
+    return AgentModelConfig(model="gpt-5-mini", effort=_DEFAULT_AGENT_EFFORTS[agent])
+
+
+def _model(model: str, effort: EffortLevel = "none") -> AgentModelConfig:
+    return AgentModelConfig(model=model, effort=effort)
 
 
 def _default_provider_models() -> dict[str, AgentModels]:
     return {
         "openai": AgentModels(),
         "anthropic": AgentModels(
-            parser="claude-haiku-4-5-20251001",
-            model_builder="claude-haiku-4-5-20251001",
-            constraint_builder="claude-haiku-4-5-20251001",
-            io="claude-haiku-4-5-20251001",
-            integrator="claude-haiku-4-5-20251001",
-            reviewer="claude-sonnet-4-6",
-            fixer="claude-sonnet-4-6",
-            user_validator_explain="claude-haiku-4-5-20251001",
-            user_validator_update="claude-haiku-4-5-20251001",
+            parser=_model("claude-haiku-4-5-20251001"),
+            model_builder=_model("claude-haiku-4-5-20251001"),
+            constraint_builder=_model("claude-haiku-4-5-20251001"),
+            io=_model("claude-haiku-4-5-20251001"),
+            integrator=_model("claude-haiku-4-5-20251001"),
+            reviewer=_model("claude-sonnet-4-6", "medium"),
+            fixer=_model("claude-sonnet-4-6", "high"),
+            user_validator_explain=_model("claude-haiku-4-5-20251001"),
+            user_validator_update=_model("claude-haiku-4-5-20251001"),
         ),
     }
-
-
-EffortLevel = Literal["none", "low", "medium", "high"]
-
-
-class AgentEfforts(BaseModel):
-    """Per-agent reasoning effort (none | low | medium | high).
-
-    Applies to both providers through any-llm. ``none`` sends no explicit
-    reasoning effort, while the other values are passed through as any-llm
-    reasoning effort levels. Defaults use no explicit reasoning effort for the
-    fast generation stages, medium for the reviewer, and high for the fixer.
-    """
-
-    parser: EffortLevel = "none"
-    model_builder: EffortLevel = "none"
-    constraint_builder: EffortLevel = "none"
-    io: EffortLevel = "none"
-    integrator: EffortLevel = "none"
-    reviewer: EffortLevel = "medium"
-    fixer: EffortLevel = "high"
-    user_validator_explain: EffortLevel = "none"
-    user_validator_update: EffortLevel = "none"
-
-    def as_dict(self) -> dict[str, str]:
-        return self.model_dump()
 
 
 class AppSettings(BaseSettings):
@@ -91,10 +115,7 @@ class AppSettings(BaseSettings):
     max_fix_iterations: int = 10
     default_workers: int = 3
 
-    # Per-agent reasoning effort (applies to whichever any-llm provider is active)
-    efforts: AgentEfforts = Field(default_factory=AgentEfforts)
-
-    # Model configuration keyed by any-llm provider name.
+    # Model and reasoning-effort configuration keyed by any-llm provider name.
     provider_models: dict[str, AgentModels] = Field(default_factory=_default_provider_models)
 
 
@@ -123,28 +144,23 @@ def load_settings(config_file: Path | None = None) -> "AppSettings":
     def _env_key(field: str) -> str:
         return field.upper()
 
-    def _merge_nested_env(section: str, prefix: str) -> None:
-        """Apply nested env overrides without discarding sibling YAML values."""
-        if section not in filtered:
-            return
-        merged = dict(filtered[section] or {})
-        for key, value in os.environ.items():
-            if key.startswith(prefix):
-                merged[key.removeprefix(prefix).lower()] = value
-        filtered[section] = merged
-
     def _merge_provider_models_env() -> None:
-        """Apply PROVIDER_MODELS__<provider>__<agent> overrides."""
+        """Apply PROVIDER_MODELS__<provider>__<agent>__<field> overrides."""
         provider_models = dict(filtered.get("provider_models") or {})
         for key, value in os.environ.items():
             if not key.startswith("PROVIDER_MODELS__"):
                 continue
-            path = key.removeprefix("PROVIDER_MODELS__").split("__", 1)
-            if len(path) != 2:
+            path = key.removeprefix("PROVIDER_MODELS__").split("__")
+            if len(path) != 3:
                 continue
-            provider, agent = (part.lower() for part in path)
+            provider, agent, field = (part.lower() for part in path)
+            if field not in {"model", "effort"}:
+                continue
             provider_config = dict(provider_models.get(provider) or {})
-            provider_config[agent] = value
+            agent_config = provider_config.get(agent) or {}
+            if not isinstance(agent_config, dict):
+                agent_config = {}
+            provider_config[agent] = {**agent_config, field: value}
             provider_models[provider] = provider_config
         if provider_models:
             filtered["provider_models"] = provider_models
@@ -157,7 +173,6 @@ def load_settings(config_file: Path | None = None) -> "AppSettings":
     # Init kwargs have higher priority than env vars in pydantic-settings. For
     # nested sections supplied by YAML, merge the specific nested env override
     # into the YAML dict so siblings keep their YAML values.
-    _merge_nested_env("efforts", "EFFORTS__")
     _merge_provider_models_env()
 
     return AppSettings(**filtered)
