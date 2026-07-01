@@ -9,8 +9,8 @@ def test_builtin_defaults():
     assert settings.enable_docker_validation is True
     assert settings.max_fix_iterations == 10
     assert settings.default_workers == 3
-    # Per-agent reasoning efforts: fast stages low, reviewer medium, fixer high.
-    assert settings.efforts.parser == "low"
+    # Per-agent reasoning efforts: fast stages none, reviewer medium, fixer high.
+    assert settings.efforts.parser == "none"
     assert settings.efforts.reviewer == "medium"
     assert settings.efforts.fixer == "high"
     # Nested per-agent model defaults are populated.

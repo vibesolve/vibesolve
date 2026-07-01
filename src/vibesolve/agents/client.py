@@ -26,19 +26,10 @@ from vibesolve.config.settings import AppSettings
 
 T = TypeVar("T")
 
-# Anthropic extended-thinking budget tokens per effort level.
-# "low" -> no thinking (cheaper + faster; also the only mode compatible with Haiku).
-_THINKING_BUDGETS: dict[str, int | None] = {
-    "low": None,
-    "medium": 8_000,
-    "high": 16_000,
-}
-
 _ANY_LLM_PROVIDER: dict[str, str] = {
     "openai": "openai",
     "claude": "anthropic",
 }
-
 
 def _extract_and_repair(text: str) -> str:
     """
@@ -88,20 +79,18 @@ def _extract_and_repair(text: str) -> str:
     return repair_json(text)
 
 
-def _uses_adaptive_thinking(model: str) -> bool:
-    """claude-opus-4-x uses adaptive thinking API (output_config.effort) instead of budget_tokens."""
-    return "opus-4" in model
+def _reasoning_effort(effort: str) -> str | None:
+    return None if effort == "none" else effort
 
 
-def _structured_text_format(model_type: type[Any]) -> dict[str, Any]:
-    name = re.sub(r"[^A-Za-z0-9_-]", "_", model_type.__name__)[:64] or "response"
+def _raw_json_response_format() -> dict[str, Any]:
     return {
-        "format": {
-            "type": "json_schema",
-            "name": name,
-            "schema": model_type.model_json_schema(by_alias=True),  # type: ignore[attr-defined]
+        "type": "json_schema",
+        "json_schema": {
+            "name": "json_response",
+            "schema": {"type": "object", "additionalProperties": True},
             "strict": False,
-        }
+        },
     }
 
 
@@ -335,12 +324,8 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         self._log.info("calling_agent", agent=agent, model=model, effort=effort, attempt=attempt)
         t0 = time.time()
 
-        if self._settings.provider == "openai":
-            resp = self._call_openai(agent, user_message, model, effort, model_type)
-            content = _response_text(resp)
-        else:
-            resp = self._call_anthropic(agent, user_message, model, effort, model_type)
-            content = _extract_and_repair(_response_text(resp))
+        resp = self._call_completion(agent, user_message, model, effort, model_type)
+        content = _extract_and_repair(_response_text(resp))
 
         elapsed = time.time() - t0
         self.agent_times[agent] = self.agent_times.get(agent, 0.0) + elapsed
@@ -358,73 +343,13 @@ class AnyLLMAgentCaller(BaseAgentCaller):
             return self._settings.models.as_dict()[agent]
         return self._settings.claude_models.as_dict()[agent]
 
-    def _call_openai(
+    def _call_completion(
         self,
         agent: str,
         user_message: str,
         model: str,
         effort: str,
         model_type: type[Any] | None,
-    ) -> Any:
-        api_params: dict[str, Any] = {
-            "model": model,
-            "input_data": user_message,
-            "instructions": load_prompt(agent),
-            "reasoning": {"effort": effort},
-            "text": _structured_text_format(model_type)
-            if model_type is not None
-            else {"format": {"type": "json_object"}},
-        }
-        if self._settings.enable_caching:
-            api_params["store"] = True
-
-        try:
-            return self._client.responses(**api_params)
-        except TypeError as exc:
-            # any-llm versions before the input_data spelling used input.
-            if "input_data" not in str(exc):
-                raise
-            api_params["input"] = api_params.pop("input_data")
-            return self._client.responses(**api_params)
-
-    def _call_anthropic(
-        self,
-        agent: str,
-        user_message: str,
-        model: str,
-        effort: str,
-        model_type: type[Any] | None,
-    ) -> Any:
-        if model_type is not None:
-            return self._call_anthropic_completion(agent, user_message, model, effort, model_type)
-
-        budget = _THINKING_BUDGETS[effort]
-        api_params: dict[str, Any] = {
-            "model": model,
-            "system": load_prompt(agent),
-            "messages": [{"role": "user", "content": user_message}],
-        }
-
-        if budget is not None:
-            if _uses_adaptive_thinking(model):
-                api_params["thinking"] = {"type": "adaptive"}
-                api_params["output_config"] = {"effort": effort}
-                api_params["max_tokens"] = 16_000
-            else:
-                api_params["thinking"] = {"type": "enabled", "budget_tokens": budget}
-                api_params["max_tokens"] = budget + 8_192
-        else:
-            api_params["max_tokens"] = 8_192
-
-        return self._client.messages(**api_params)
-
-    def _call_anthropic_completion(
-        self,
-        agent: str,
-        user_message: str,
-        model: str,
-        effort: str,
-        model_type: type[Any],
     ) -> Any:
         return self._client.completion(
             model=model,
@@ -432,8 +357,8 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                 {"role": "system", "content": load_prompt(agent)},
                 {"role": "user", "content": user_message},
             ],
-            response_format=model_type,
-            reasoning_effort=effort,
+            response_format=model_type if model_type is not None else _raw_json_response_format(),
+            reasoning_effort=_reasoning_effort(effort),
         )
 
     def _record_usage(self, agent: str, model: str, resp: Any) -> None:

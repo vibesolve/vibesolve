@@ -1,5 +1,6 @@
 """Tests for the any-llm-backed agent caller compatibility layer."""
 
+import json
 import sys
 from types import SimpleNamespace
 
@@ -59,14 +60,14 @@ def test_openai_raw_call_returns_json_and_tracks_tokens(tmp_path):
     calls: list[dict] = []
 
     class FakeClient:
-        def responses(self, **params):
+        def completion(self, **params):
             calls.append(params)
             return SimpleNamespace(
-                output_text='{"problemType":"test"}',
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"problemType":"test"}'))],
                 usage=SimpleNamespace(
-                    input_tokens=10,
-                    output_tokens=3,
-                    input_tokens_details=SimpleNamespace(cached_tokens=2),
+                    prompt_tokens=10,
+                    completion_tokens=3,
+                    prompt_tokens_details=SimpleNamespace(cached_tokens=2),
                 ),
             )
 
@@ -75,8 +76,9 @@ def test_openai_raw_call_returns_json_and_tracks_tokens(tmp_path):
 
     raw = caller.call("parser", "make a schedule")
 
-    assert raw == '{"problemType":"test"}'
-    assert calls[0]["text"] == {"format": {"type": "json_object"}}
+    assert json.loads(raw) == {"problemType": "test"}
+    assert calls[0]["response_format"]["type"] == "json_schema"
+    assert calls[0]["reasoning_effort"] is None
     assert caller.agent_tokens["parser"] == {
         "model": settings.models.parser,
         "input_tokens": 10,
@@ -89,9 +91,11 @@ def test_openai_typed_call_requests_schema_and_parses_result(tmp_path):
     calls: list[dict] = []
 
     class FakeClient:
-        def responses(self, **params):
+        def completion(self, **params):
             calls.append(params)
-            return SimpleNamespace(output_text='{"changed_files":[]}')
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=Delta(changed_files=[])))]
+            )
 
     settings = AppSettings(provider="openai", openai_api_key="openai-key")
     caller = _caller(tmp_path, FakeClient(), settings)
@@ -99,15 +103,15 @@ def test_openai_typed_call_requests_schema_and_parses_result(tmp_path):
     delta = caller.call_typed("fixer", "{}", Delta)
 
     assert delta.changed_files == []
-    assert calls[0]["text"]["format"]["type"] == "json_schema"
+    assert calls[0]["response_format"] is Delta
 
 
-def test_claude_typed_call_prefers_structured_completion(tmp_path):
-    calls: list[str] = []
+def test_claude_default_none_effort_disables_reasoning_through_any_llm(tmp_path):
+    calls: list[dict] = []
 
     class FakeClient:
         def completion(self, **params):
-            calls.append("completion")
+            calls.append(params)
             assert params["response_format"] is Delta
             return SimpleNamespace(
                 choices=[
@@ -121,8 +125,33 @@ def test_claude_typed_call_prefers_structured_completion(tmp_path):
                 ]
             )
 
-        def messages(self, **_params):
-            raise AssertionError("messages fallback should not be used")
+    settings = AppSettings(provider="claude", anthropic_api_key="anthropic-key")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("model_builder", "{}", Delta)
+
+    assert delta.changed_files[0].path == "pom.xml"
+    assert calls[0]["reasoning_effort"] is None
+
+
+def test_claude_high_effort_passes_through_any_llm(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            assert params["response_format"] is Delta
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            parsed=Delta(
+                                changed_files=[FileEntry(path="pom.xml", content="<project />")]
+                            )
+                        )
+                    )
+                ]
+            )
 
     settings = AppSettings(provider="claude", anthropic_api_key="anthropic-key")
     caller = _caller(tmp_path, FakeClient(), settings)
@@ -130,32 +159,30 @@ def test_claude_typed_call_prefers_structured_completion(tmp_path):
     delta = caller.call_typed("fixer", "{}", Delta)
 
     assert delta.changed_files[0].path == "pom.xml"
-    assert calls == ["completion"]
+    assert calls[0]["reasoning_effort"] == "high"
 
 
 def test_claude_typed_call_falls_back_when_structured_is_rejected(tmp_path):
-    calls: list[str] = []
+    calls: list[dict] = []
 
     class FakeClient:
-        def completion(self, **_params):
-            calls.append("completion")
-            raise TypeError("response_format is not supported")
-
-        def messages(self, **params):
-            calls.append("messages")
-            assert "output_format" not in params
+        def completion(self, **params):
+            calls.append(params)
+            if params["response_format"] is Delta:
+                raise TypeError("response_format is not supported")
+            assert params["response_format"]["type"] == "json_schema"
             return SimpleNamespace(
-                content=[
+                choices=[
                     SimpleNamespace(
-                        type="text",
-                        text='{"changed_files":[{"path":"pom.xml","content":"<project />"}]}',
+                        message=SimpleNamespace(
+                            content='{"changed_files":[{"path":"pom.xml","content":"<project />"}]}'
+                        )
                     )
                 ],
                 usage=SimpleNamespace(
-                    input_tokens=5,
-                    cache_creation_input_tokens=1,
-                    cache_read_input_tokens=2,
-                    output_tokens=3,
+                    prompt_tokens=6,
+                    completion_tokens=3,
+                    prompt_tokens_details=SimpleNamespace(cached_tokens=2),
                 ),
             )
 
@@ -165,7 +192,7 @@ def test_claude_typed_call_falls_back_when_structured_is_rejected(tmp_path):
     delta = caller.call_typed("fixer", "{}", Delta)
 
     assert delta.changed_files[0].path == "pom.xml"
-    assert calls == ["completion", "messages"]
+    assert len(calls) == 2
     assert caller.agent_tokens["fixer"] == {
         "model": settings.claude_models.fixer,
         "input_tokens": 6,

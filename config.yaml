@@ -15,18 +15,18 @@
 provider: openai
 
 # Per-agent reasoning effort (applies to whichever any-llm provider is active).
-# Allowed values per agent: low | medium | high
+# Allowed values per agent: none | low | medium | high
 # Override every agent at once from the CLI with --reasoning-effort.
 efforts:
-  parser:                  low
-  model_builder:           low
-  constraint_builder:      low
-  io:                      low
-  integrator:              low
+  parser:                  none
+  model_builder:           none
+  constraint_builder:      none
+  io:                      none
+  integrator:              none
   reviewer:                medium
   fixer:                   high
-  user_validator_explain:  low
-  user_validator_update:   low
+  user_validator_explain:  none
+  user_validator_update:   none
 
 # Per-agent model overrides for OpenAI through any-llm (used when provider=openai).
 models:
@@ -54,7 +54,8 @@ claude_models:
 
 # --- General runtime settings ---
 
-# Enable OpenAI prompt caching (store=True on any-llm's Responses path).
+# Reserved for provider caching support. The unified any-llm completion path
+# does not currently attach provider-specific cache flags.
 enable_caching: true
 
 # Run Docker validation (mvn compile + mvn exec:java) after generation.

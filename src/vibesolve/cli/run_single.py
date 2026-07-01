@@ -36,7 +36,7 @@ def run(
     ] = None,
     reasoning_effort: Annotated[
         Optional[str],
-        typer.Option("--reasoning-effort", help="Override reasoning effort for ALL agents: low|medium|high. Omit to use per-agent config."),
+        typer.Option("--reasoning-effort", help="Override reasoning effort for ALL agents: none|low|medium|high. Omit to use per-agent config."),
     ] = None,
     provider: Annotated[
         Optional[str],

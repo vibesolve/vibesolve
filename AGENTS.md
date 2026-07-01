@@ -55,7 +55,7 @@ Flags shared by both subcommands:
 
 `run` only:
 
-- `--reasoning-effort low|medium|high` — overrides every agent's effort at once (per-agent defaults live in the `efforts:` config block; see below)
+- `--reasoning-effort none|low|medium|high` — overrides every agent's effort at once (per-agent defaults live in the `efforts:` config block; see below)
 - `--user-validate` — pause after parsing to let the user review/correct the `ProblemSpec` interactively before code generation
 
 `batch` only:
@@ -143,12 +143,12 @@ names — pydantic-settings parses the `__` nesting.
 - **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
 - **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add a model default in `config/settings.py:AgentModels` (and `ClaudeAgentModels`), and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
-- **Per-agent reasoning effort** → `config/settings.py:AgentEfforts` and the `efforts:` block in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else low). Read in `agents/client.py` via `settings.efforts.as_dict()[agent]`; `--reasoning-effort` overrides every agent at once.
+- **Per-agent reasoning effort** → `config/settings.py:AgentEfforts` and the `efforts:` block in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none). Read in `agents/client.py` via `settings.efforts.as_dict()[agent]`; `--reasoning-effort` overrides every agent at once.
 
 `BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
-through any-llm; stage-1 compatibility keeps `provider=openai|claude`, with
-`claude` mapped internally to any-llm's Anthropic provider. For Claude-style
-responses, `_extract_and_repair()` strips code fences and runs `json_repair`.
+through any-llm's unified completion API; stage-1 compatibility keeps
+`provider=openai|claude`, with `claude` mapped internally to any-llm's Anthropic
+provider. `_extract_and_repair()` strips code fences and runs `json_repair`.
 
 ## Generated-project conventions (encoded in prompts)
 

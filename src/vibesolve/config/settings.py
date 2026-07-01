@@ -23,27 +23,27 @@ class AgentModels(BaseModel):
         return self.model_dump()
 
 
-EffortLevel = Literal["low", "medium", "high"]
+EffortLevel = Literal["none", "low", "medium", "high"]
 
 
 class AgentEfforts(BaseModel):
-    """Per-agent reasoning effort (low | medium | high).
+    """Per-agent reasoning effort (none | low | medium | high).
 
-    Applies to both providers through any-llm: for OpenAI it sets
-    ``reasoning.effort``; for Claude it selects the extended-thinking budget.
-    Defaults are low for the fast generation stages, medium for the reviewer,
-    and high for the fixer.
+    Applies to both providers through any-llm. ``none`` sends no explicit
+    reasoning effort, while the other values are passed through as any-llm
+    reasoning effort levels. Defaults use no explicit reasoning effort for the
+    fast generation stages, medium for the reviewer, and high for the fixer.
     """
 
-    parser: EffortLevel = "low"
-    model_builder: EffortLevel = "low"
-    constraint_builder: EffortLevel = "low"
-    io: EffortLevel = "low"
-    integrator: EffortLevel = "low"
+    parser: EffortLevel = "none"
+    model_builder: EffortLevel = "none"
+    constraint_builder: EffortLevel = "none"
+    io: EffortLevel = "none"
+    integrator: EffortLevel = "none"
     reviewer: EffortLevel = "medium"
     fixer: EffortLevel = "high"
-    user_validator_explain: EffortLevel = "low"
-    user_validator_update: EffortLevel = "low"
+    user_validator_explain: EffortLevel = "none"
+    user_validator_update: EffortLevel = "none"
 
     def as_dict(self) -> dict[str, str]:
         return self.model_dump()
@@ -84,6 +84,7 @@ class AppSettings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
+    # Reserved for provider caching support; kept for config compatibility.
     enable_caching: bool = True
     enable_docker_validation: bool = True
     max_fix_iterations: int = 10
