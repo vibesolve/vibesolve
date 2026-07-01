@@ -1,3 +1,5 @@
+import json
+from importlib import resources
 from pathlib import Path
 from typing import Literal, Self
 
@@ -31,19 +33,15 @@ class AgentModelConfig(BaseModel):
 class AgentModels(BaseModel):
     """Per-agent model settings for one any-llm provider."""
 
-    parser: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("parser"))
-    model_builder: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("model_builder"))
-    constraint_builder: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("constraint_builder"))
-    io: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("io"))
-    integrator: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("integrator"))
-    reviewer: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("reviewer"))
-    fixer: AgentModelConfig = Field(default_factory=lambda: _default_agent_model("fixer"))
-    user_validator_explain: AgentModelConfig = Field(
-        default_factory=lambda: _default_agent_model("user_validator_explain")
-    )
-    user_validator_update: AgentModelConfig = Field(
-        default_factory=lambda: _default_agent_model("user_validator_update")
-    )
+    parser: AgentModelConfig
+    model_builder: AgentModelConfig
+    constraint_builder: AgentModelConfig
+    io: AgentModelConfig
+    integrator: AgentModelConfig
+    reviewer: AgentModelConfig
+    fixer: AgentModelConfig
+    user_validator_explain: AgentModelConfig
+    user_validator_update: AgentModelConfig
 
     @model_validator(mode="before")
     @classmethod
@@ -74,8 +72,7 @@ class AgentModels(BaseModel):
     @classmethod
     def _merge_agent_defaults(cls, value: object, info: ValidationInfo) -> object:
         if isinstance(value, dict) and info.field_name is not None:
-            default = _default_agent_model(info.field_name)
-            return {**default.model_dump(), **value}
+            return {"effort": _DEFAULT_AGENT_EFFORTS[info.field_name], **value}
         return value
 
     def as_dict(self) -> dict[str, AgentModelConfig]:
@@ -90,28 +87,18 @@ class AgentModels(BaseModel):
         )
 
 
-def _default_agent_model(agent: str) -> AgentModelConfig:
-    return AgentModelConfig(model="gpt-5-mini", effort=_DEFAULT_AGENT_EFFORTS[agent])
-
-
-def _model(model: str, effort: EffortLevel = "none") -> AgentModelConfig:
-    return AgentModelConfig(model=model, effort=effort)
-
-
 def _default_provider_models() -> dict[str, AgentModels]:
+    """Load and validate the provider profiles shipped with the package."""
+    raw = json.loads(
+        resources.files("vibesolve.config")
+        .joinpath("provider_models.json")
+        .read_text(encoding="utf-8")
+    )
+    if not isinstance(raw, dict):
+        raise ValueError("provider_models.json must contain a JSON object")
     return {
-        "openai": AgentModels(),
-        "anthropic": AgentModels(
-            parser=_model("claude-haiku-4-5-20251001"),
-            model_builder=_model("claude-haiku-4-5-20251001"),
-            constraint_builder=_model("claude-haiku-4-5-20251001"),
-            io=_model("claude-haiku-4-5-20251001"),
-            integrator=_model("claude-haiku-4-5-20251001"),
-            reviewer=_model("claude-sonnet-4-6", "medium"),
-            fixer=_model("claude-sonnet-4-6", "high"),
-            user_validator_explain=_model("claude-haiku-4-5-20251001"),
-            user_validator_update=_model("claude-haiku-4-5-20251001"),
-        ),
+        provider: AgentModels.model_validate(profile)
+        for provider, profile in raw.items()
     }
 
 
@@ -182,10 +169,14 @@ class AppSettings(BaseSettings):
                         f"provider_models.{provider} must define _default.model or a model "
                         f"for every agent; missing: {missing}"
                     )
-                base = AgentModels()
 
             provider_config: dict[str, object] = {}
-            for agent, base_config in base.as_dict().items():
+            for agent in AgentModels.model_fields:
+                base_config = (
+                    base.as_dict()[agent].model_dump()
+                    if base is not None
+                    else {"effort": _DEFAULT_AGENT_EFFORTS[agent]}
+                )
                 agent_override = raw_config.get(agent, {})
                 if isinstance(agent_override, AgentModelConfig):
                     agent_override = agent_override.model_dump()
@@ -193,7 +184,7 @@ class AppSettings(BaseSettings):
                     provider_config[agent] = agent_override
                     continue
                 provider_config[agent] = {
-                    **base_config.model_dump(),
+                    **base_config,
                     **provider_default,
                     **agent_override,
                 }

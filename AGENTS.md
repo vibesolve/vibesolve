@@ -79,7 +79,7 @@ Flags shared by both subcommands:
 ```
 user_input/*.txt
    │
-   ▼   Parser (gpt-5-mini)                            → ProblemSpec
+   ▼   Parser (configured provider model)             → ProblemSpec
    │
    ▼   [User Validator — Explain / Update]            ← --user-validate (optional, interactive)
    │
@@ -92,7 +92,7 @@ user_input/*.txt
    ▼   Docker validate    (mvn clean compile  →  mvn exec:java [timeout 30s]  →  mvn test)
    │
    ├─ PASS  → write ProblemSpec.json, ProjectManifest.json, project dir + .zip
-   └─ FAIL  → Fixer (gpt-5-mini, high effort) → re-validate, up to N iterations
+   └─ FAIL  → Fixer (high default effort) → re-validate, up to N iterations
 ```
 
 Each agent except Parser/UserValidator returns a `Delta` (`changed_files`, `deleted_files`, optional `projectName`/`basePackage`, optional `explanation`), which is merged into the accumulated `ProjectManifest` by
@@ -106,7 +106,9 @@ src/vibesolve/
 │   ├── client.py          BaseAgentCaller + AnyLLMAgentCaller + compatibility aliases + make_caller_factory
 │   └── prompts.py         load_prompt() + _PROMPT_FILES (agent → filename map)
 ├── cli/                   main.py (entry point) + run_single.py (`run`) + run_batch.py (`batch`)
-├── config/settings.py     AppSettings (pydantic-settings) + load_settings(yaml)
+├── config/
+│   ├── settings.py        AppSettings (pydantic-settings) + load_settings(yaml)
+│   └── provider_models.json  Packaged built-in provider profiles
 ├── models/
 │   ├── domain.py          ProblemSpec, ProjectManifest, Delta, FileEntry, UserValidationExplanation
 │   └── results.py         ValidationResult, ProblemResult, BatchSummary, FixAttempt
@@ -143,7 +145,7 @@ validation → pipeline → cli`; `config` is a leaf used by `cli`.
 2. Environment variables (`OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`, `PROVIDER=bedrock`, …)
 3. `config.yaml` at repo root (auto-loaded if present)
 4. `.env.local`
-5. Built-in defaults in `config/settings.py`
+5. Built-in provider profiles in `src/vibesolve/config/provider_models.json`
 
 `PROVIDER_MODELS__<PROVIDER>__<AGENT>__MODEL` and
 `PROVIDER_MODELS__<PROVIDER>__<AGENT>__EFFORT` env vars override per-agent
@@ -159,9 +161,9 @@ its leading underscore means a triple: `PROVIDER_MODELS__DEEPSEEK___DEFAULT__MOD
 ## Modifying agent behavior
 
 - **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
-- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add the agent to `config/settings.py:AgentModels` and each default `provider_models` entry with `model` and `effort`, and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
+- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add the agent to `config/settings.py:AgentModels` and each profile in `config/provider_models.json`, and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent). Paths in this section are relative to `src/vibesolve/`.
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
-- **Per-agent reasoning effort** → `provider_models.<provider>.<agent>.effort` in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none), or set a whole block at once with `provider_models.<provider>._default.effort`. `auto` omits the reasoning parameter; explicit values are preserved across retries. Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
+- **Per-agent reasoning effort** → override `provider_models.<provider>.<agent>.effort` in `config.yaml`, or set a whole block at once with `provider_models.<provider>._default.effort`. Packaged profile defaults live beside the model IDs in `config/provider_models.json`; absent an override, the generic defaults are reviewer=medium, fixer=high, everything else none. `auto` omits the reasoning parameter; explicit values are preserved across retries. Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
 
 `BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
 through any-llm's unified completion API. `provider` is passed through to

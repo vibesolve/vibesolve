@@ -1,16 +1,31 @@
 """Tests for settings resolution (defaults + YAML overrides)."""
 
+import json
 import os
+from importlib import resources
+from pathlib import Path
 
 import pytest
 
-from vibesolve.config.settings import AppSettings, load_settings
+from vibesolve.config.settings import AgentModels, AppSettings, load_settings
 
 
 def _clear_provider_model_env(monkeypatch):
     for key in tuple(os.environ):
         if key.startswith("PROVIDER_MODELS__"):
             monkeypatch.delenv(key, raising=False)
+
+
+def _packaged_profiles() -> dict[str, AgentModels]:
+    raw = json.loads(
+        resources.files("vibesolve.config")
+        .joinpath("provider_models.json")
+        .read_text(encoding="utf-8")
+    )
+    return {
+        provider: AgentModels.model_validate(profile)
+        for provider, profile in raw.items()
+    }
 
 
 def test_builtin_defaults(monkeypatch):
@@ -24,16 +39,55 @@ def test_builtin_defaults(monkeypatch):
     assert "openai_api_key" not in type(settings).model_fields
     assert "anthropic_api_key" not in type(settings).model_fields
     assert "gemini_api_key" not in type(settings).model_fields
-    # Nested per-agent model and effort defaults are populated.
-    assert settings.provider_models["openai"].parser.model == "gpt-5-mini"
+    assert settings.provider_models == _packaged_profiles()
+    assert set(settings.provider_models) == {
+        "openai",
+        "anthropic",
+        "gemini",
+        "mistral",
+        "cohere",
+        "deepseek",
+    }
     assert settings.provider_models["openai"].parser.effort == "none"
     assert settings.provider_models["openai"].reviewer.effort == "medium"
     assert settings.provider_models["openai"].fixer.effort == "high"
-    assert settings.provider_models["anthropic"].user_validator_explain.model == "claude-haiku-4-5-20251001"
-    assert settings.provider_models["anthropic"].user_validator_update.model == "claude-haiku-4-5-20251001"
     assert settings.provider_models["anthropic"].parser.effort == "none"
     assert settings.provider_models["anthropic"].reviewer.effort == "medium"
     assert settings.provider_models["anthropic"].fixer.effort == "high"
+    assert settings.provider_models["gemini"].parser.effort == "auto"
+    assert settings.provider_models["gemini"].reviewer.effort == "medium"
+    assert settings.provider_models["gemini"].fixer.effort == "high"
+
+
+def test_packaged_cohere_profile_reserves_reasoning_model_for_fixer(monkeypatch):
+    _clear_provider_model_env(monkeypatch)
+
+    agents = AppSettings().provider_models["cohere"].as_dict()
+
+    assert agents["parser"].effort == "auto"
+    assert agents["reviewer"].effort == "auto"
+    assert agents["fixer"].model != agents["parser"].model
+    assert agents["fixer"].effort == "high"
+
+
+def test_packaged_profiles_load_without_repo_config(tmp_path, monkeypatch):
+    _clear_provider_model_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+
+    assert load_settings().provider_models == _packaged_profiles()
+
+
+def test_builtin_model_ids_are_owned_by_packaged_json():
+    project_root = Path(__file__).parents[1]
+    settings_source = (project_root / "src/vibesolve/config/settings.py").read_text(
+        encoding="utf-8"
+    )
+    root_config = (project_root / "config.yaml").read_text(encoding="utf-8")
+
+    for profile in _packaged_profiles().values():
+        for agent in profile.as_dict().values():
+            assert agent.model not in settings_source
+            assert agent.model not in root_config
 
 
 def test_yaml_overrides_defaults(tmp_path, monkeypatch):
@@ -62,7 +116,9 @@ def test_yaml_overrides_defaults(tmp_path, monkeypatch):
     assert settings.enable_docker_validation is False
     assert settings.provider_models["openai"].fixer.model == "yaml-fixer"
     assert settings.provider_models["openai"].fixer.effort == "low"
-    assert settings.provider_models["anthropic"].parser.model == "claude-haiku-4-5-20251001"
+    packaged = _packaged_profiles()
+    assert settings.provider_models["anthropic"] == packaged["anthropic"]
+    assert settings.provider_models["gemini"] == packaged["gemini"]
 
 
 def test_partial_provider_override_preserves_provider_specific_defaults(tmp_path, monkeypatch):
@@ -78,8 +134,9 @@ def test_partial_provider_override_preserves_provider_specific_defaults(tmp_path
     )
 
     settings = load_settings(config)
-    assert settings.provider_models["anthropic"].parser.model == "claude-haiku-4-5-20251001"
-    assert settings.provider_models["anthropic"].fixer.model == "claude-sonnet-4-6"
+    packaged = _packaged_profiles()["anthropic"]
+    assert settings.provider_models["anthropic"].parser.model == packaged.parser.model
+    assert settings.provider_models["anthropic"].fixer.model == packaged.fixer.model
     assert settings.provider_models["anthropic"].fixer.effort == "medium"
 
 
@@ -140,15 +197,15 @@ def test_provider_default_fills_all_agents(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text(
         "provider_models:\n"
-        "  deepseek:\n"
+        "  custom:\n"
         "    _default:\n"
-        "      model: deepseek-v4-flash\n"
+        "      model: custom-default\n"
         "      effort: high\n",
         encoding="utf-8",
     )
 
-    agents = load_settings(config).provider_models["deepseek"].as_dict()
-    assert {c.model for c in agents.values()} == {"deepseek-v4-flash"}
+    agents = load_settings(config).provider_models["custom"].as_dict()
+    assert {c.model for c in agents.values()} == {"custom-default"}
     assert {c.effort for c in agents.values()} == {"high"}
 
 
@@ -158,21 +215,21 @@ def test_provider_default_yields_to_agent_specific(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text(
         "provider_models:\n"
-        "  deepseek:\n"
+        "  custom:\n"
         "    _default:\n"
-        "      model: deepseek-v4-flash\n"
+        "      model: custom-default\n"
         "      effort: high\n"
         "    fixer:\n"
-        "      model: deepseek-v4-pro\n",
+        "      model: custom-fixer\n",
         encoding="utf-8",
     )
 
-    agents = load_settings(config).provider_models["deepseek"].as_dict()
+    agents = load_settings(config).provider_models["custom"].as_dict()
     # Agent-specific model wins; unspecified effort falls back to the _default.
-    assert agents["fixer"].model == "deepseek-v4-pro"
+    assert agents["fixer"].model == "custom-fixer"
     assert agents["fixer"].effort == "high"
     # Every other agent inherits the _default wholesale.
-    assert agents["parser"].model == "deepseek-v4-flash"
+    assert agents["parser"].model == "custom-default"
     assert agents["parser"].effort == "high"
 
 
@@ -182,14 +239,14 @@ def test_provider_default_model_only_keeps_builtin_efforts(tmp_path, monkeypatch
     config = tmp_path / "config.yaml"
     config.write_text(
         "provider_models:\n"
-        "  deepseek:\n"
+        "  custom:\n"
         "    _default:\n"
-        "      model: deepseek-v4-flash\n",
+        "      model: custom-default\n",
         encoding="utf-8",
     )
 
-    agents = load_settings(config).provider_models["deepseek"].as_dict()
-    assert {c.model for c in agents.values()} == {"deepseek-v4-flash"}
+    agents = load_settings(config).provider_models["custom"].as_dict()
+    assert {c.model for c in agents.values()} == {"custom-default"}
     # With no _default effort, each agent keeps its built-in per-agent effort.
     assert agents["parser"].effort == "none"
     assert agents["reviewer"].effort == "medium"
@@ -275,8 +332,9 @@ def test_root_model_keys_are_ignored(tmp_path, monkeypatch):
     monkeypatch.setenv("MODELS__FIXER", "env-fixer")
 
     settings = load_settings(config)
-    assert settings.provider_models["openai"].parser.model == "gpt-5-mini"
-    assert settings.provider_models["openai"].fixer.model == "gpt-5-mini"
+    packaged = _packaged_profiles()["openai"]
+    assert settings.provider_models["openai"].parser.model == packaged.parser.model
+    assert settings.provider_models["openai"].fixer.model == packaged.fixer.model
 
 
 def test_nested_non_default_provider_model_env_overrides_only_matching_yaml_key(

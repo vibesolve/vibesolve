@@ -27,6 +27,8 @@ source .venv/bin/activate    # Windows: .venv\Scripts\activate
 cp .env.example .env.local
 # now open .env.local and set provider credentials, e.g. OPENAI_API_KEY=sk-...
 # for --provider claude/anthropic, set ANTHROPIC_API_KEY=...
+# for --provider gemini, set GEMINI_API_KEY=...
+# MISTRAL_API_KEY, COHERE_API_KEY, and DEEPSEEK_API_KEY work the same way
 ```
 
 With the environment activated, `vibesolve` is on your `PATH` — no prefix needed. Activation lasts for the shell session; in a fresh shell either re-run `source .venv/bin/activate` or prefix a one-off command with `uv run` (e.g. `uv run vibesolve run`).
@@ -58,6 +60,18 @@ Solve your own problem file:
 vibesolve run user_input/my-problem.txt
 ```
 
+Run on the Gemini Developer API free tier after adding a key from
+[Google AI Studio](https://aistudio.google.com/apikey) to `.env.local` as
+`GEMINI_API_KEY`:
+
+```bash
+uv sync
+vibesolve run --provider gemini
+```
+
+Free-tier requests are quota-limited, and Google may use free-tier content to
+improve its products.
+
 Solve every `*.txt` in `user_input/`, in parallel:
 
 ```bash
@@ -88,7 +102,7 @@ Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTIN
 
 ## Configuration
 
-Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); use any supported any-llm provider name with `--provider`, with `claude` kept as an alias for `anthropic`. Missing optional provider SDKs are installed on demand from any-llm's own advertised extras. Per-agent model IDs and reasoning efforts are configured under `provider_models.<provider>.<agent>`; custom providers must define `_default.model` or explicitly configure every agent, and per-agent entries override `_default` field by field. The `auto` effort omits the reasoning parameter and lets the provider/model choose; explicit efforts are preserved across retries.
+Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); use any supported any-llm provider name with `--provider`, with `claude` kept as an alias for `anthropic`. Missing optional provider SDKs are installed on demand from any-llm's own advertised extras. Built-in provider profiles live in `src/vibesolve/config/provider_models.json`, which is packaged in the wheel; `config.yaml` only overrides them. Custom providers must define `_default.model` or explicitly configure every agent, and per-agent entries override `_default` field by field. The `auto` effort omits the reasoning parameter and lets the provider/model choose; explicit efforts are preserved across retries.
 
 ## Prerequisites
 

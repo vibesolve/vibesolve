@@ -1,0 +1,68 @@
+{
+  "openai": {
+    "_default": {
+      "model": "gpt-5-mini"
+    }
+  },
+  "anthropic": {
+    "_default": {
+      "model": "claude-haiku-4-5-20251001"
+    },
+    "reviewer": {
+      "model": "claude-sonnet-4-6"
+    },
+    "fixer": {
+      "model": "claude-sonnet-4-6"
+    }
+  },
+  "gemini": {
+    "_default": {
+      "model": "gemini-3.7-flash",
+      "effort": "auto"
+    },
+    "reviewer": {
+      "effort": "medium"
+    },
+    "fixer": {
+      "effort": "high"
+    }
+  },
+  "mistral": {
+    "_default": {
+      "model": "mistral-small-latest",
+      "effort": "none"
+    },
+    "constraint_builder": {
+      "model": "ministral-14b-latest"
+    },
+    "io": {
+      "model": "ministral-8b-latest"
+    },
+    "integrator": {
+      "model": "mistral-medium-3-5"
+    },
+    "reviewer": {
+      "model": "devstral-latest"
+    },
+    "fixer": {
+      "model": "mistral-medium-3-5",
+      "effort": "high"
+    }
+  },
+  "cohere": {
+    "_default": {
+      "model": "command-a-03-2025",
+      "effort": "auto"
+    },
+    "fixer": {
+      "model": "command-a-reasoning-08-2025",
+      "effort": "high"
+    }
+  },
+  "deepseek": {
+    "_default": {
+      "model": "deepseek-v4-flash",
+      "effort": "high"
+    }
+  }
+}

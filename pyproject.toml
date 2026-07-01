@@ -49,7 +49,7 @@ vibesolve = "vibesolve.cli.main:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"vibesolve" = ["prompts/*.txt"]
+"vibesolve" = ["prompts/*.txt", "config/provider_models.json"]
 
 [tool.setuptools.data-files]
 "share/vibesolve/provider-lock" = ["pyproject.toml", "uv.lock"]

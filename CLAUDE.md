@@ -112,7 +112,7 @@ Settings are resolved in this priority order (highest → lowest):
 2. **Environment variables** — `OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL`, …
 3. **YAML config file** — `config.yaml` (auto-loaded if present) or `--config <path>`
 4. **`.env.local`** — API key fallback
-5. **Built-in defaults**
+5. **Packaged defaults** — `src/vibesolve/config/provider_models.json`
 
 ### YAML config file
 
@@ -123,7 +123,7 @@ Pass a different file with `--config`:
 vibesolve run --config path/to/other.yaml
 ```
 
-Available settings (all optional — omit to use the default):
+Available settings (all optional — omit to use the packaged profile):
 
 ```yaml
 enable_caching: true
@@ -138,48 +138,21 @@ provider: openai
 # auto omits the reasoning parameter and lets the provider/model choose.
 # --reasoning-effort overrides every agent's effort at once.
 #
-# An optional `_default` key sets the model and/or effort for every agent in a
-# provider block; per-agent entries override it field-by-field. Precedence:
-# per-agent value > _default > built-in default. The openai block below uses it
-# to set one model and only override the two agents that raise their effort;
-# anthropic is shown expanded for contrast.
+# Built-in provider profiles live in src/vibesolve/config/provider_models.json
+# and are included in installed wheels. This mapping only contains overrides.
+# An optional `_default` sets model and/or effort for every agent in a provider
+# block; per-agent entries override it field by field.
 provider_models:
-  openai:
+  bedrock:
     _default:
-      model: gpt-5-mini
+      model: amazon.nova-lite-v1:0
       effort: none
     reviewer:
+      model: amazon.nova-pro-v1:0
       effort: medium
     fixer:
+      model: amazon.nova-pro-v1:0
       effort: high
-  anthropic:
-    parser:
-      model: claude-haiku-4-5-20251001
-      effort: none
-    model_builder:
-      model: claude-haiku-4-5-20251001
-      effort: none
-    constraint_builder:
-      model: claude-haiku-4-5-20251001
-      effort: none
-    io:
-      model: claude-haiku-4-5-20251001
-      effort: none
-    integrator:
-      model: claude-haiku-4-5-20251001
-      effort: none
-    reviewer:
-      model: claude-sonnet-4-6
-      effort: medium
-    fixer:
-      model: claude-sonnet-4-6
-      effort: high
-    user_validator_explain:
-      model: claude-haiku-4-5-20251001
-      effort: none
-    user_validator_update:
-      model: claude-haiku-4-5-20251001
-      effort: none
 ```
 
 Keep provider credentials in `.env.local` or provider-native credential stores — never put secrets in `config.yaml`.
