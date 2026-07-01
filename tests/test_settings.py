@@ -17,6 +17,7 @@ def test_builtin_defaults():
     assert settings.models.parser == "gpt-5-mini"
     assert settings.claude_models.user_validator_explain == "claude-haiku-4-5-20251001"
     assert settings.claude_models.user_validator_update == "claude-haiku-4-5-20251001"
+    assert settings.provider_models == {}
 
 
 def test_yaml_overrides_defaults(tmp_path, monkeypatch):
@@ -61,3 +62,39 @@ def test_nested_env_var_overrides_only_matching_yaml_key(tmp_path, monkeypatch):
     settings = load_settings(config)
     assert settings.models.parser == "yaml-parser"
     assert settings.models.fixer == "env-fixer"
+
+
+def test_arbitrary_provider_and_provider_model_overrides(tmp_path, monkeypatch):
+    monkeypatch.delenv("PROVIDER", raising=False)
+    monkeypatch.delenv("PROVIDER_MODELS__BEDROCK__FIXER", raising=False)
+
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "provider: bedrock\n"
+        "provider_models:\n"
+        "  bedrock:\n"
+        "    parser: amazon.nova-lite-v1:0\n"
+        "    fixer: amazon.nova-pro-v1:0\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config)
+    assert settings.provider == "bedrock"
+    assert settings.provider_models["bedrock"].parser == "amazon.nova-lite-v1:0"
+    assert settings.provider_models["bedrock"].fixer == "amazon.nova-pro-v1:0"
+
+
+def test_nested_provider_model_env_overrides_only_matching_yaml_key(tmp_path, monkeypatch):
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "provider_models:\n"
+        "  bedrock:\n"
+        "    parser: yaml-parser\n"
+        "    fixer: yaml-fixer\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROVIDER_MODELS__BEDROCK__FIXER", "env-fixer")
+
+    settings = load_settings(config)
+    assert settings.provider_models["bedrock"].parser == "yaml-parser"
+    assert settings.provider_models["bedrock"].fixer == "env-fixer"

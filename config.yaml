@@ -5,14 +5,19 @@
 #   vibesolve batch --config config.yaml
 #
 # Priority (highest → lowest):
-#   1. CLI flags              (e.g. --provider=claude, --reasoning-effort=high)
-#   2. Environment variables  (e.g. PROVIDER=claude, MODELS__FIXER=gpt-5)
+#   1. CLI flags              (e.g. --provider=bedrock, --reasoning-effort=high)
+#   2. Environment variables  (e.g. PROVIDER=bedrock, MODELS__FIXER=gpt-5)
 #   3. This YAML file
 #   4. Built-in defaults
 
-# LLM provider compatibility names: openai | claude
-# Internally these are routed through any-llm (claude -> anthropic).
+# any-llm provider name. The legacy value "claude" is accepted as an alias for
+# any-llm's "anthropic" provider.
 provider: openai
+
+# Optional generic API key override for providers that accept one API key.
+# If omitted, any-llm uses provider-native environment variables or credential
+# chains such as AWS_PROFILE/AWS_REGION for Bedrock.
+# api_key:
 
 # Per-agent reasoning effort (applies to whichever any-llm provider is active).
 # Allowed values per agent: none | low | medium | high
@@ -28,7 +33,8 @@ efforts:
   user_validator_explain:  none
   user_validator_update:   none
 
-# Per-agent model overrides for OpenAI through any-llm (used when provider=openai).
+# Per-agent model overrides for the active provider. These defaults are OpenAI
+# model IDs because provider defaults to openai.
 models:
   parser:                  gpt-5-mini
   model_builder:           gpt-5-mini
@@ -40,7 +46,7 @@ models:
   user_validator_explain:  gpt-5-mini
   user_validator_update:   gpt-5-mini
 
-# Per-agent model overrides for Claude through any-llm (used when provider=claude).
+# Compatibility model overrides for provider=claude or provider=anthropic.
 claude_models:
   parser:             claude-haiku-4-5-20251001
   model_builder:      claude-haiku-4-5-20251001
@@ -51,6 +57,21 @@ claude_models:
   fixer:              claude-sonnet-4-6
   user_validator_explain:  claude-haiku-4-5-20251001
   user_validator_update:   claude-haiku-4-5-20251001
+
+# Optional per-provider model overrides for any any-llm provider. If an entry
+# exists for the active provider, it wins over models/claude_models.
+# Provider names are any-llm names after compatibility aliases are applied.
+# provider_models:
+#   bedrock:
+#     parser:                  amazon.nova-lite-v1:0
+#     model_builder:           amazon.nova-lite-v1:0
+#     constraint_builder:      amazon.nova-lite-v1:0
+#     io:                      amazon.nova-lite-v1:0
+#     integrator:              amazon.nova-lite-v1:0
+#     reviewer:                amazon.nova-pro-v1:0
+#     fixer:                   amazon.nova-pro-v1:0
+#     user_validator_explain:  amazon.nova-lite-v1:0
+#     user_validator_update:   amazon.nova-lite-v1:0
 
 # --- General runtime settings ---
 

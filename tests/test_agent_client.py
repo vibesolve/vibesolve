@@ -22,11 +22,11 @@ def _caller(tmp_path, client, settings: AppSettings) -> AnyLLMAgentCaller:
 
 
 def test_make_caller_factory_maps_claude_to_any_llm_anthropic(monkeypatch, tmp_path):
-    created: list[tuple[str, str]] = []
+    created: list[tuple[str, str | None]] = []
 
     class FakeAnyLLM:
         @classmethod
-        def create(cls, provider: str, *, api_key: str):
+        def create(cls, provider: str, *, api_key: str | None):
             created.append((provider, api_key))
             return SimpleNamespace()
 
@@ -40,19 +40,53 @@ def test_make_caller_factory_maps_claude_to_any_llm_anthropic(monkeypatch, tmp_p
     assert isinstance(caller, AnyLLMAgentCaller)
 
 
-def test_make_caller_factory_keeps_openai_key_validation_before_import(monkeypatch):
-    monkeypatch.delitem(sys.modules, "any_llm", raising=False)
+def test_make_caller_factory_passes_any_llm_provider_names_through(monkeypatch, tmp_path):
+    created: list[tuple[str, str | None]] = []
 
-    settings = AppSettings(provider="openai", openai_api_key="")
+    class FakeAnyLLM:
+        @classmethod
+        def create(cls, provider: str, *, api_key: str | None):
+            created.append((provider, api_key))
+            return SimpleNamespace()
 
-    with pytest.raises(ValueError, match="OPENAI_API_KEY is required"):
-        make_caller_factory(settings)
+    monkeypatch.setitem(sys.modules, "any_llm", SimpleNamespace(AnyLLM=FakeAnyLLM))
+
+    settings = AppSettings(provider="bedrock")
+    factory = make_caller_factory(settings)
+    caller = factory(tmp_path, structlog.get_logger())
+
+    assert created == [("bedrock", None)]
+    assert isinstance(caller, AnyLLMAgentCaller)
 
 
-def test_make_caller_factory_rejects_unsupported_provider():
-    settings = AppSettings(openai_api_key="openai-key").model_copy(update={"provider": "ollama"})
+def test_make_caller_factory_uses_generic_api_key_override(monkeypatch, tmp_path):
+    created: list[tuple[str, str | None]] = []
 
-    with pytest.raises(ValueError, match="Unsupported provider='ollama'"):
+    class FakeAnyLLM:
+        @classmethod
+        def create(cls, provider: str, *, api_key: str | None):
+            created.append((provider, api_key))
+            return SimpleNamespace()
+
+    monkeypatch.setitem(sys.modules, "any_llm", SimpleNamespace(AnyLLM=FakeAnyLLM))
+
+    settings = AppSettings(provider="groq", api_key="generic-key")
+    make_caller_factory(settings)(tmp_path, structlog.get_logger())
+
+    assert created == [("groq", "generic-key")]
+
+
+def test_make_caller_factory_delegates_unsupported_provider_to_any_llm(monkeypatch):
+    class FakeAnyLLM:
+        @classmethod
+        def create(cls, provider: str, *, api_key: str | None):
+            raise ValueError(f"unsupported: {provider}")
+
+    monkeypatch.setitem(sys.modules, "any_llm", SimpleNamespace(AnyLLM=FakeAnyLLM))
+
+    settings = AppSettings(provider="not-a-provider")
+
+    with pytest.raises(ValueError, match="unsupported: not-a-provider"):
         make_caller_factory(settings)
 
 
@@ -199,3 +233,67 @@ def test_claude_typed_call_falls_back_when_structured_is_rejected(tmp_path):
         "cached_input_tokens": 2,
         "output_tokens": 3,
     }
+
+
+def test_provider_model_overrides_are_keyed_by_any_llm_provider(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"changed_files":[]}'))]
+            )
+
+    settings = AppSettings(
+        provider="bedrock",
+        provider_models={
+            "bedrock": {
+                "parser": "unused-parser",
+                "model_builder": "unused-model-builder",
+                "constraint_builder": "unused-constraint-builder",
+                "io": "unused-io",
+                "integrator": "unused-integrator",
+                "reviewer": "unused-reviewer",
+                "fixer": "amazon.nova-pro-v1:0",
+                "user_validator_explain": "unused-explain",
+                "user_validator_update": "unused-update",
+            }
+        },
+    )
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files == []
+    assert calls[0]["model"] == "amazon.nova-pro-v1:0"
+
+
+def test_typed_call_falls_back_when_provider_rejects_all_response_formats(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if "response_format" in params:
+                raise TypeError("response_format is not supported")
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content='{"changed_files":[{"path":"pom.xml","content":"<project />"}]}'
+                        )
+                    )
+                ]
+            )
+
+    settings = AppSettings(provider="bedrock")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files[0].path == "pom.xml"
+    assert len(calls) == 3
+    assert calls[0]["response_format"] is Delta
+    assert calls[1]["response_format"]["type"] == "json_schema"
+    assert "response_format" not in calls[2]

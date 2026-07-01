@@ -40,7 +40,7 @@ def run(
     ] = None,
     provider: Annotated[
         Optional[str],
-        typer.Option("--provider", help="LLM provider: openai|claude (default: openai)."),
+        typer.Option("--provider", help="any-llm provider name, e.g. openai, anthropic, bedrock. The legacy alias claude maps to anthropic."),
     ] = None,
     serve: Annotated[
         bool,

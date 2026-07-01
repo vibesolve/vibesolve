@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AgentModels(BaseModel):
-    """OpenAI model names per agent."""
+    """Model names per agent for the active LLM provider."""
 
     parser: str = "gpt-5-mini"
     model_builder: str = "gpt-5-mini"
@@ -77,10 +77,15 @@ class AppSettings(BaseSettings):
         extra="ignore",
     )
 
-    # Compatibility provider selection. "claude" maps to any-llm's "anthropic".
-    provider: Literal["openai", "claude"] = "openai"
+    # any-llm provider name. The legacy "claude" alias maps to "anthropic" in
+    # the agent client; all other values are passed directly to any-llm.
+    provider: str = "openai"
 
-    # API keys — only the one matching the active provider is required at runtime
+    # Optional generic API key override. If empty, any-llm falls back to the
+    # provider's own environment variables or credential chain.
+    api_key: str = ""
+
+    # Legacy provider-specific key fields, kept for existing .env.local files.
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
@@ -93,9 +98,12 @@ class AppSettings(BaseSettings):
     # Per-agent reasoning effort (applies to whichever any-llm provider is active)
     efforts: AgentEfforts = Field(default_factory=AgentEfforts)
 
-    # Per-provider model configuration
+    # Model configuration. ``models`` is used for the active provider unless a
+    # matching ``provider_models.<provider>`` entry exists. ``claude_models`` is
+    # kept as a compatibility alias for provider=claude/anthropic.
     models: AgentModels = Field(default_factory=AgentModels)
     claude_models: ClaudeAgentModels = Field(default_factory=ClaudeAgentModels)
+    provider_models: dict[str, AgentModels] = Field(default_factory=dict)
 
 
 _DEFAULT_CONFIG = Path("config.yaml")
@@ -133,6 +141,22 @@ def load_settings(config_file: Path | None = None) -> "AppSettings":
                 merged[key.removeprefix(prefix).lower()] = value
         filtered[section] = merged
 
+    def _merge_provider_models_env() -> None:
+        """Apply PROVIDER_MODELS__<provider>__<agent> overrides."""
+        provider_models = dict(filtered.get("provider_models") or {})
+        for key, value in os.environ.items():
+            if not key.startswith("PROVIDER_MODELS__"):
+                continue
+            path = key.removeprefix("PROVIDER_MODELS__").split("__", 1)
+            if len(path) != 2:
+                continue
+            provider, agent = (part.lower() for part in path)
+            provider_config = dict(provider_models.get(provider) or {})
+            provider_config[agent] = value
+            provider_models[provider] = provider_config
+        if provider_models:
+            filtered["provider_models"] = provider_models
+
     filtered = {
         k: v for k, v in data.items()
         if _env_key(k) not in os.environ
@@ -144,5 +168,6 @@ def load_settings(config_file: Path | None = None) -> "AppSettings":
     _merge_nested_env("models", "MODELS__")
     _merge_nested_env("claude_models", "CLAUDE_MODELS__")
     _merge_nested_env("efforts", "EFFORTS__")
+    _merge_provider_models_env()
 
     return AppSettings(**filtered)

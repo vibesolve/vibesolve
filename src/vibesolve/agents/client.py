@@ -6,8 +6,8 @@ Stage-1 compatibility keeps the existing public surface:
     factory = make_caller_factory(settings)   # once, in the CLI
     caller  = factory(log_dir, log)           # once per problem run
 
-The CLI/config provider names remain ``openai`` and ``claude``. Internally,
-``claude`` maps to any-llm's ``anthropic`` provider.
+Provider names are passed through to any-llm. The legacy ``claude`` name is kept
+as a compatibility alias for any-llm's ``anthropic`` provider.
 """
 
 import json
@@ -26,10 +26,13 @@ from vibesolve.config.settings import AppSettings
 
 T = TypeVar("T")
 
-_ANY_LLM_PROVIDER: dict[str, str] = {
-    "openai": "openai",
-    "claude": "anthropic",
-}
+_PROVIDER_ALIASES: dict[str, str] = {"claude": "anthropic"}
+
+
+def _any_llm_provider(provider: str) -> str:
+    normalized = provider.strip().lower()
+    return _PROVIDER_ALIASES.get(normalized, normalized)
+
 
 def _extract_and_repair(text: str) -> str:
     """
@@ -268,13 +271,16 @@ class AnyLLMAgentCaller(BaseAgentCaller):
     ) -> T | str:
         last_exc: Exception | None = None
         structured_unavailable = False
+        raw_schema_unavailable = False
         for attempt in range(1, 4):
             use_structured = model_type is not None and not structured_unavailable
+            use_raw_schema = not use_structured and not raw_schema_unavailable
             try:
                 raw = self._call_once(
                     agent,
                     user_message,
                     model_type=model_type if use_structured else None,
+                    use_raw_schema=use_raw_schema,
                     attempt=attempt,
                 )
             except Exception as exc:
@@ -282,6 +288,15 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                     structured_unavailable = True
                     self._log.warning(
                         "structured_output_fallback",
+                        agent=agent,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
+                    continue
+                if use_raw_schema and _looks_like_unsupported_response_format(exc):
+                    raw_schema_unavailable = True
+                    self._log.warning(
+                        "json_schema_output_fallback",
                         agent=agent,
                         attempt=attempt,
                         error=str(exc),
@@ -316,6 +331,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         user_message: str,
         *,
         model_type: type[Any] | None,
+        use_raw_schema: bool,
         attempt: int,
     ) -> str:
         model = self._model_for(agent)
@@ -324,7 +340,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         self._log.info("calling_agent", agent=agent, model=model, effort=effort, attempt=attempt)
         t0 = time.time()
 
-        resp = self._call_completion(agent, user_message, model, effort, model_type)
+        resp = self._call_completion(agent, user_message, model, effort, model_type, use_raw_schema)
         content = _extract_and_repair(_response_text(resp))
 
         elapsed = time.time() - t0
@@ -339,9 +355,17 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         return content
 
     def _model_for(self, agent: str) -> str:
-        if self._settings.provider == "openai":
+        provider = _any_llm_provider(self._settings.provider)
+        provider_models = self._settings.provider_models.get(provider)
+        if provider_models is None:
+            provider_models = self._settings.provider_models.get(self._settings.provider)
+        if provider_models is not None:
+            return provider_models.as_dict()[agent]
+        if provider == "anthropic":
+            return self._settings.claude_models.as_dict()[agent]
+        if provider == "openai":
             return self._settings.models.as_dict()[agent]
-        return self._settings.claude_models.as_dict()[agent]
+        return self._settings.models.as_dict()[agent]
 
     def _call_completion(
         self,
@@ -350,16 +374,21 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         model: str,
         effort: str,
         model_type: type[Any] | None,
+        use_raw_schema: bool,
     ) -> Any:
-        return self._client.completion(
-            model=model,
-            messages=[
+        api_params: dict[str, Any] = {
+            "model": model,
+            "messages": [
                 {"role": "system", "content": load_prompt(agent)},
                 {"role": "user", "content": user_message},
             ],
-            response_format=model_type if model_type is not None else _raw_json_response_format(),
-            reasoning_effort=_reasoning_effort(effort),
-        )
+            "reasoning_effort": _reasoning_effort(effort),
+        }
+        if model_type is not None:
+            api_params["response_format"] = model_type
+        elif use_raw_schema:
+            api_params["response_format"] = _raw_json_response_format()
+        return self._client.completion(**api_params)
 
     def _record_usage(self, agent: str, model: str, resp: Any) -> None:
         usage = getattr(resp, "usage", None)
@@ -397,26 +426,12 @@ def make_caller_factory(settings: AppSettings) -> Callable:
     This preserves the previous factory contract while removing direct SDK
     wiring from VibeSolve.
     """
-    try:
-        any_llm_provider = _ANY_LLM_PROVIDER[settings.provider]
-    except KeyError as exc:
-        supported = "|".join(_ANY_LLM_PROVIDER)
-        raise ValueError(
-            f"Unsupported provider={settings.provider!r}. Supported values: {supported}."
-        ) from exc
-
+    any_llm_provider = _any_llm_provider(settings.provider)
     api_key = _api_key_for(settings)
-
-    if not api_key:
-        env_name = "OPENAI_API_KEY" if settings.provider == "openai" else "ANTHROPIC_API_KEY"
-        raise ValueError(
-            f"{env_name} is required when provider={settings.provider}. "
-            "Set it in .env.local or as an environment variable."
-        )
 
     from any_llm import AnyLLM
 
-    client = AnyLLM.create(any_llm_provider, api_key=api_key)
+    client = AnyLLM.create(any_llm_provider, api_key=api_key or None)
 
     def _factory(log_dir: Path, log: structlog.BoundLogger) -> BaseAgentCaller:
         return AnyLLMAgentCaller(client=client, settings=settings, log_dir=log_dir, log=log)
@@ -425,9 +440,19 @@ def make_caller_factory(settings: AppSettings) -> Callable:
 
 
 def _api_key_for(settings: AppSettings) -> str:
-    if settings.provider == "openai":
+    if settings.api_key:
+        return settings.api_key
+    provider = _any_llm_provider(settings.provider)
+    if provider == "openai":
         return settings.openai_api_key
-    return settings.anthropic_api_key
+    if provider == "anthropic":
+        return settings.anthropic_api_key
+    return ""
+
+
+def _looks_like_unsupported_response_format(exc: Exception) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return "response_format" in text or "structured output" in text or "json_schema" in text
 
 
 # ---------------------------------------------------------------------------

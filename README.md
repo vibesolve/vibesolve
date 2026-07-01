@@ -22,8 +22,8 @@ pip install -e .
 
 # API key - gitignored, never committed
 cp .env.example .env.local
-# now open .env.local and set OPENAI_API_KEY=sk-...
-# for --provider claude, also set ANTHROPIC_API_KEY=...
+# now open .env.local and set provider credentials, e.g. OPENAI_API_KEY=sk-...
+# for --provider claude/anthropic, set ANTHROPIC_API_KEY=...
 ```
 
 ## Usage
@@ -78,7 +78,7 @@ Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTIN
 
 ## Configuration
 
-Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); stage-1 compatibility keeps the existing `openai` and `claude` provider names.
+Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); use any installed any-llm provider name with `--provider`, with `claude` kept as an alias for `anthropic`.
 
 ## Prerequisites
 
@@ -86,7 +86,7 @@ Settings live in `config.yaml` at the project root, loaded automatically. Pass `
 |---|---|
 | Python 3.11+ | the setup steps use conda |
 | Docker 20+ | for automated validation |
-| LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude`; both are used through any-llm |
+| LLM credentials | Provider-specific credentials for the selected any-llm backend, for example OpenAI API keys, Anthropic API keys, or AWS credentials for Bedrock |
 
 ## How it works
 

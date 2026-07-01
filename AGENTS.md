@@ -22,13 +22,17 @@ Python source under `src/vibesolve/` with the generated artifacts under
 ```bash
 conda activate vibesolve            # ALWAYS activate first — required for every command
 pip install -e ".[dev]"             # installs the package, CLI, and test deps (pytest)
-cp .env.example .env.local          # then fill in OPENAI_API_KEY
+cp .env.example .env.local          # then fill in provider credentials
 docker build -t timefold-validator docker/   # pre-bakes Maven deps into the validator image
 ```
 
 Python 3.11+ is required (modern type annotations). If `conda activate vibesolve` fails, create the env first: `conda create -n vibesolve python=3.11 -y`.
 
-For the Anthropic/Claude provider, add `ANTHROPIC_API_KEY=...` to `.env.local` and pass `--provider claude` (or set it in `config.yaml`).
+Provider calls go through any-llm. Pass any installed any-llm provider name with
+`--provider` (for example `openai`, `anthropic`, `bedrock`); the legacy
+`claude` value is kept as an alias for `anthropic`. Credentials come from
+provider-specific environment variables or credential chains, or from the
+generic `API_KEY` setting where the provider accepts a single API key.
 
 Make sure the Docker daemon is running before the `docker build` (Linux:
 `sudo systemctl start docker`; macOS/Windows: launch Docker Desktop).
@@ -48,7 +52,7 @@ Run `vibesolve --help` (or `vibesolve run --help` / `vibesolve batch --help`) fo
 Flags shared by both subcommands:
 
 - `--config path/to.yaml` — use a different config file (the root `config.yaml` auto-loads otherwise)
-- `--provider openai|claude` — pick the LLM provider
+- `--provider PROVIDER` — any-llm provider name; `claude` aliases to `anthropic`
 - `--no-validation-loop` — skip the Docker validation/fixer loop entirely (prompt-debugging only)
 - `--max-iterations N` — cap fixer retries
 - `--serve` — on success, emit a portable `Dockerfile` + `docker-run.sh` into the generated project
@@ -119,7 +123,7 @@ docker/Dockerfile          eclipse-temurin:17-jdk-jammy + Maven
 docker/pom-warmup.xml      warms the Maven cache at image build with the generated projects' dependency set
 user_input/*.txt           Problem descriptions — input to the pipeline
 config.yaml                Project-level settings (auto-loaded; CLI flags override)
-.env.local                 OPENAI_API_KEY / ANTHROPIC_API_KEY — NEVER commit (copy from .env.example)
+.env.local                 provider credentials — NEVER commit (copy from .env.example)
 logs/run_<ts>/             pipeline.log + per-agent raw response files
 results/run_<ts>/          ProblemSpec.json, ProjectManifest.json, <project>/, <project>.zip
 ```
@@ -130,25 +134,26 @@ validation → pipeline → cli`; `config` is a leaf used by `cli`.
 ## Configuration (priority high → low)
 
 1. CLI flags
-2. Environment variables (`OPENAI_API_KEY`, `MODELS__FIXER=gpt-5`, `PROVIDER=claude`, …)
+2. Environment variables (`OPENAI_API_KEY`, `MODELS__FIXER=gpt-5`, `PROVIDER=bedrock`, …)
 3. `config.yaml` at repo root (auto-loaded if present)
 4. `.env.local`
 5. Built-in defaults in `config/settings.py`
 
-`MODELS__<AGENT>` and `CLAUDE_MODELS__<AGENT>` env vars override per-agent model
-names — pydantic-settings parses the `__` nesting.
+`MODELS__<AGENT>`, `CLAUDE_MODELS__<AGENT>`, and
+`PROVIDER_MODELS__<PROVIDER>__<AGENT>` env vars override per-agent model names —
+pydantic-settings parses the `__` nesting.
 
 ## Modifying agent behavior
 
 - **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
-- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add a model default in `config/settings.py:AgentModels` (and `ClaudeAgentModels`), and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
+- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add a model default in `config/settings.py:AgentModels` (and compatibility maps such as `ClaudeAgentModels`), and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
 - **Per-agent reasoning effort** → `config/settings.py:AgentEfforts` and the `efforts:` block in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none). Read in `agents/client.py` via `settings.efforts.as_dict()[agent]`; `--reasoning-effort` overrides every agent at once.
 
 `BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
-through any-llm's unified completion API; stage-1 compatibility keeps
-`provider=openai|claude`, with `claude` mapped internally to any-llm's Anthropic
-provider. `_extract_and_repair()` strips code fences and runs `json_repair`.
+through any-llm's unified completion API. `provider` is passed through to
+any-llm after the compatibility alias `claude -> anthropic` is applied.
+`_extract_and_repair()` strips code fences and runs `json_repair`.
 
 ## Generated-project conventions (encoded in prompts)
 
