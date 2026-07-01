@@ -20,13 +20,12 @@ Python source under `src/vibesolve/` with the generated artifacts under
 ## Setup (one-time)
 
 ```bash
-conda activate vibesolve            # ALWAYS activate first — required for every command
-pip install -e ".[dev]"             # installs the package, CLI, and test deps (pytest)
+uv sync --extra dev                 # creates .venv and installs package + test deps
 cp .env.example .env.local          # then fill in OPENAI_API_KEY
 docker build -t timefold-validator docker/   # pre-bakes Maven deps into the validator image
 ```
 
-Python 3.11+ is required (modern type annotations). If `conda activate vibesolve` fails, create the env first: `conda create -n vibesolve python=3.11 -y`.
+Python 3.11+ is required (modern type annotations). Use `uv run ...` for Python commands so the project environment is selected automatically. If uv cannot find a suitable Python, install one with `uv python install 3.13`.
 
 For the Anthropic/Claude provider, add `ANTHROPIC_API_KEY=...` to `.env.local` and pass `--provider claude` (or set it in `config.yaml`).
 
@@ -39,11 +38,11 @@ There is a single `vibesolve` command (defined in `pyproject.toml [project.scrip
 
 | Command | Purpose | Source |
 |---|---|---|
-| `vibesolve run [input.txt]` | Run the pipeline on one problem | `src/vibesolve/cli/run_single.py` |
-| `vibesolve batch [files...]` | Parallel batch over `user_input/*.txt` | `src/vibesolve/cli/run_batch.py` |
+| `uv run vibesolve run [input.txt]` | Run the pipeline on one problem | `src/vibesolve/cli/run_single.py` |
+| `uv run vibesolve batch [files...]` | Parallel batch over `user_input/*.txt` | `src/vibesolve/cli/run_batch.py` |
 
 `cli/main.py` is the entry point; it registers the two functions as subcommands.
-Run `vibesolve --help` (or `vibesolve run --help` / `vibesolve batch --help`) for the full option list.
+Run `uv run vibesolve --help` (or `uv run vibesolve run --help` / `uv run vibesolve batch --help`) for the full option list.
 
 Flags shared by both subcommands:
 
@@ -114,7 +113,7 @@ src/vibesolve/
     ├── docker_validator.py   DockerValidator (persistent container; compile/run/test phases)
     └── feedback_controller.py FeedbackController — Reviewer → validate → Fixer loop
 
-tests/                     Offline unit/smoke tests (no API key / Docker needed) — run with `pytest`
+tests/                     Offline unit/smoke tests (no API key / Docker needed) — run with `uv run --extra dev pytest`
 docker/Dockerfile          eclipse-temurin:17-jdk-jammy + Maven
 docker/pom-warmup.xml      warms the Maven cache at image build with the generated projects' dependency set
 user_input/*.txt           Problem descriptions — input to the pipeline
@@ -200,11 +199,11 @@ plus `summary.json` + `summary.txt`.
 
 ## Iterating quickly
 
-- **Run the offline tests**: `pytest` — no API key or Docker needed.
+- **Run the offline tests**: `uv run --extra dev pytest` — no API key or Docker needed.
 - **See what an agent returned**: read `logs/run_<ts>/<agent>-response_*.txt` — raw responses, one file per call.
-- **Skip Docker to isolate prompt issues**: `vibesolve run --no-validation-loop`.
-- **Debug a single problem end-to-end**: `vibesolve run user_input/<file>.txt --max-iterations 3 --reasoning-effort medium`.
-- **Run the containerized output**: `vibesolve run --serve`, then `cd results/run_<ts>/<project>/ && ./docker-run.sh` → http://localhost:8080/q/swagger-ui.
+- **Skip Docker to isolate prompt issues**: `uv run vibesolve run --no-validation-loop`.
+- **Debug a single problem end-to-end**: `uv run vibesolve run user_input/<file>.txt --max-iterations 3 --reasoning-effort medium`.
+- **Run the containerized output**: `uv run vibesolve run --serve`, then `cd results/run_<ts>/<project>/ && ./docker-run.sh` → http://localhost:8080/q/swagger-ui.
 
 ## Project rules to respect when editing
 

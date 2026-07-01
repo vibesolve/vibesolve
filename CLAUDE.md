@@ -14,11 +14,8 @@ Multi-agent system that generates complete Timefold Solver projects from natural
 ## Setup
 
 ```bash
-# IMPORTANT: Always activate the conda environment first
-conda activate vibesolve
-
-# Install the package (reads pyproject.toml — do this once, or after adding dependencies)
-pip install -e .
+# Create the environment and install the package (do this once, or after adding dependencies)
+uv sync --extra dev
 
 # Configure API key
 # Create .env.local with OPENAI_API_KEY=your-key
@@ -27,38 +24,38 @@ pip install -e .
 docker build -t timefold-validator docker/
 ```
 
-**Important:** This project requires Python 3.11+ for modern type annotations. Always use `conda activate vibesolve` before running any Python commands.
+**Important:** This project requires Python 3.11+ for modern type annotations. Use `uv run ...` for Python commands so the project environment is selected automatically.
 
 ## Running the Pipeline
 
 ```bash
 # Single problem (default: user_input/timetable.txt)
-vibesolve run
+uv run vibesolve run
 
 # Specific input file
-vibesolve run user_input/hospital-rostering.txt
+uv run vibesolve run user_input/hospital-rostering.txt
 
 # Skip the Docker validation/fixer loop
-vibesolve run --no-validation-loop
+uv run vibesolve run --no-validation-loop
 
 # Pause after parsing to review and correct the problem spec before code generation
-vibesolve run --user-validate
+uv run vibesolve run --user-validate
 
 # Custom reasoning effort and fixer iterations
-vibesolve run --reasoning-effort medium --max-iterations 5
+uv run vibesolve run --reasoning-effort medium --max-iterations 5
 
 # Emit a Dockerfile + docker-run.sh into the generated project
 # (only happens on success; the script is NOT started automatically)
-vibesolve run --serve
+uv run vibesolve run --serve
 
 # Parallel batch across all *.txt in user_input/
-vibesolve batch
+uv run vibesolve batch
 
 # Batch with more workers
-vibesolve batch --workers 5
+uv run vibesolve batch --workers 5
 
 # Batch + emit Dockerfiles so the benchmark can also measure "Docker works"
-vibesolve batch --serve
+uv run vibesolve batch --serve
 
 ```
 
@@ -68,9 +65,9 @@ vibesolve batch --serve
 - `results/run_<timestamp>/problem-spec-review.md` — plain-language spec summary written during `--user-validate`
 - `logs/batch_<timestamp>/benchmark-results.csv` + `benchmark.json` — the benchmark table (see below); the table is also appended to `summary.txt`
 
-### Benchmark table (`vibesolve batch`)
+### Benchmark table (`uv run vibesolve batch`)
 
-Every `vibesolve batch` ends with a benchmark table — the same columns as the vanilla-model benchmark: **Compiles · Solver runs · Quarkus runs · Endpoints work · Docker works · Cost · Tokens**. (`vibesolve run` does not benchmark — batch is the benchmarking entry point; `run` is for solving a single problem.)
+Every `uv run vibesolve batch` ends with a benchmark table — the same columns as the vanilla-model benchmark: **Compiles · Solver runs · Quarkus runs · Endpoints work · Docker works · Cost · Tokens**. (`uv run vibesolve run` does not benchmark — batch is the benchmarking entry point; `run` is for solving a single problem.)
 
 - **`Compiles`, `Solver runs`, `Cost`, `Tokens`** are derived for free from the pipeline's own results — `compilation`/`runtime` phase outcomes and `kpi_tracker` token/cost totals. No Docker re-run.
 - **`Quarkus runs`, `Endpoints work`, `Docker works`** are always measured by a serial post-batch pass per project — `mvn package` → boot the Quarkus fast-jar → probe every endpoint → build the project's `Dockerfile`. It uses a single host port (`18080`), so it runs after the parallel workers, not alongside them.
@@ -82,7 +79,7 @@ Every `vibesolve batch` ends with a benchmark table — the same columns as the 
 
 ### `--serve`: containerize the generated project
 
-`vibesolve run --serve` (also `vibesolve batch --serve`) emits three extra files into each successfully-generated project directory:
+`uv run vibesolve run --serve` (also `uv run vibesolve batch --serve`) emits three extra files into each successfully-generated project directory:
 
 - `Dockerfile` — two-stage build on public `eclipse-temurin:17-jdk-jammy` → `eclipse-temurin:17-jre-jammy`. Produces a Quarkus fast-jar and exposes port 8080. Portable across machines (not coupled to the internal `timefold-validator` image).
 - `.dockerignore` — excludes `target/`, `.git/`, IDE files.
@@ -91,7 +88,7 @@ Every `vibesolve batch` ends with a benchmark table — the same columns as the 
 Usage:
 
 ```bash
-vibesolve run --serve user_input/timetable.txt
+uv run vibesolve run --serve user_input/timetable.txt
 # ...pipeline runs, validation passes...
 
 cd results/run_<timestamp>/<project-name>
@@ -120,7 +117,7 @@ Edit `config.yaml` at the project root. It is loaded automatically on every run.
 Pass a different file with `--config`:
 
 ```bash
-vibesolve run --config path/to/other.yaml
+uv run vibesolve run --config path/to/other.yaml
 ```
 
 Available settings (all optional — omit to use the default):
@@ -247,8 +244,8 @@ agents_arch/
 │       │   └── table.py         # derive Compiles/Solver from results + render benchmark table (text/CSV)
 │       ├── cli/
 │       │   ├── main.py          # vibesolve entry point (run/batch subcommands)
-│       │   ├── run_single.py    # `vibesolve run` command
-│       │   ├── run_batch.py     # `vibesolve batch` command (always benchmarks)
+│       │   ├── run_single.py    # `uv run vibesolve run` command
+│       │   ├── run_batch.py     # `uv run vibesolve batch` command (always benchmarks)
 │       ├── config/
 │       │   └── settings.py      # AppSettings (pydantic-settings)
 │       ├── models/
@@ -292,7 +289,7 @@ After the Integrator completes, the pipeline runs an automated validation and fi
 ## Adding New Problem Types
 
 1. Create a problem description in `user_input/`
-2. Run: `vibesolve run user_input/your-problem.txt`
+2. Run: `uv run vibesolve run user_input/your-problem.txt`
 
 ## Timefold-Specific Notes
 

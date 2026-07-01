@@ -16,9 +16,7 @@ Describe an optimization problem in plain English. Get a complete, runnable [Tim
 git clone https://github.com/vibesolve/vibesolve.git
 cd vibesolve
 
-conda create -n vibesolve python=3.11 -y
-conda activate vibesolve
-pip install -e .
+uv sync
 
 # API key - gitignored, never committed
 cp .env.example .env.local
@@ -29,28 +27,28 @@ cp .env.example .env.local
 
 Start Docker on your machine: Linux run `sudo systemctl start docker`, macOS or Windows launch Docker Desktop.
 
-Activate the environment:
+Run commands through uv:
 
 ```bash
-conda activate vibesolve
+uv run vibesolve --help
 ```
 
 Solve the bundled school-timetabling example:
 
 ```bash
-vibesolve run
+uv run vibesolve run
 ```
 
 Solve your own problem file:
 
 ```bash
-vibesolve run user_input/my-problem.txt
+uv run vibesolve run user_input/my-problem.txt
 ```
 
 Solve every `*.txt` in `user_input/`, in parallel:
 
 ```bash
-vibesolve batch
+uv run vibesolve batch
 ```
 
 ### Common flags
@@ -58,22 +56,22 @@ vibesolve batch
 Also emit a Dockerfile and `docker-run.sh` next to the generated project:
 
 ```bash
-vibesolve run --serve
+uv run vibesolve run --serve
 ```
 
 Review the parsed spec before code generation begins:
 
 ```bash
-vibesolve run --user-validate
+uv run vibesolve run --user-validate
 ```
 
 Run a batch with more parallel workers (default 3):
 
 ```bash
-vibesolve batch --workers 5
+uv run vibesolve batch --workers 5
 ```
 
-Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTING.md#cli-reference). Generated projects land in `results/run_<timestamp>/`. Structured logs in `logs/run_<timestamp>/`.
+Run `uv run vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTING.md#cli-reference). Generated projects land in `results/run_<timestamp>/`. Structured logs in `logs/run_<timestamp>/`.
 
 ## Configuration
 
@@ -83,8 +81,9 @@ Settings live in `config.yaml` at the project root, loaded automatically. Pass `
 
 | Requirement | Notes |
 |---|---|
-| Python 3.11+ | the setup steps use conda |
-| Docker 20+ | for automated validation |
+| Python 3.11+ | via conda recommended |
+| uv | install from <https://docs.astral.sh/uv/> |
+| Docker 20+ | for automated validation; skippable with `--no-validation-loop` |
 | LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude` |
 
 ## How it works

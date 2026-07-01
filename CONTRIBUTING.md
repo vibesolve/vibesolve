@@ -5,7 +5,7 @@ Thank you for your interest in contributing! This document covers how to set up 
 ## Prerequisites
 
 - Python 3.11+
-- [Conda](https://docs.conda.io/en/latest/) (recommended) or a virtualenv
+- [uv](https://docs.astral.sh/uv/) for environment and command execution
 - Docker (required for validation; skip with `--no-validation-loop` during development)
 - An OpenAI API key (or an Anthropic key, for `--provider claude`)
 
@@ -16,14 +16,10 @@ Thank you for your interest in contributing! This document covers how to set up 
 git clone https://github.com/vibesolve/vibesolve.git
 cd vibesolve
 
-# 2. Create and activate the environment
-conda create -n vibesolve python=3.11 -y
-conda activate vibesolve   # or: python -m venv .venv && source .venv/bin/activate
+# 2. Create the environment and install the package with dev/test dependencies
+uv sync --extra dev
 
-# 3. Install in editable mode, with dev/test dependencies
-pip install -e ".[dev]"
-
-# 4. API key — gitignored, never committed
+# 3. API key — gitignored, never committed
 cp .env.example .env.local
 # Now open .env.local and set OPENAI_API_KEY=sk-... (add ANTHROPIC_API_KEY for --provider claude)
 
@@ -38,21 +34,20 @@ cp .env.example .env.local
 ## Running the Pipeline
 
 ```bash
-conda activate vibesolve   # once per shell
 # start Docker — Linux: sudo systemctl start docker  |  macOS/Windows: launch Docker Desktop
 
-vibesolve run            # the bundled example
-vibesolve run --serve    # also emit a Dockerfile + docker-run.sh
-vibesolve batch          # every *.txt in user_input/, in parallel
+uv run vibesolve run            # the bundled example
+uv run vibesolve run --serve    # also emit a Dockerfile + docker-run.sh
+uv run vibesolve batch          # every *.txt in user_input/, in parallel
 ```
 
-For shell tab-completion, run `vibesolve --install-completion` once (edits your personal shell config).
+For shell tab-completion, run `uv run vibesolve --install-completion` once (edits your personal shell config).
 
 ## CLI reference
 
-CLI flags override `config.yaml` and environment variables. Run `vibesolve run --help` / `vibesolve batch --help` to see this same list.
+CLI flags override `config.yaml` and environment variables. Run `uv run vibesolve run --help` / `uv run vibesolve batch --help` to see this same list.
 
-### `vibesolve run [FILE]`
+### `uv run vibesolve run [FILE]`
 
 `FILE` — problem description text file (default: `user_input/timetable.txt`).
 
@@ -66,7 +61,7 @@ CLI flags override `config.yaml` and environment variables. Run `vibesolve run -
 | `--max-iterations N` | `max_fix_iterations` (10) | Max fixer agent iterations. |
 | `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |
 
-### `vibesolve batch [FILES...]`
+### `uv run vibesolve batch [FILES...]`
 
 `FILES` — input problem files (default: all `*.txt` in `--input-dir`).
 
@@ -87,7 +82,7 @@ CLI flags override `config.yaml` and environment variables. Run `vibesolve run -
 Run the test suite with:
 
 ```bash
-pytest
+uv run --extra dev pytest
 ```
 
 The tests are offline — no API key or Docker required — and cover the CLI surface, settings resolution, and the core model/merge logic. Please add or update tests when changing that behavior.

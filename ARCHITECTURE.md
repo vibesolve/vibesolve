@@ -71,8 +71,8 @@ agents_arch/
 │       │   └── table.py               # derive Compiles/Solver metrics + render benchmark table
 │       ├── cli/
 │       │   ├── main.py                # vibesolve entry point (run/batch subcommands)
-│       │   ├── run_single.py          # `vibesolve run` command
-│       │   ├── run_batch.py           # `vibesolve batch` command (always benchmarks)
+│       │   ├── run_single.py          # `uv run vibesolve run` command
+│       │   ├── run_batch.py           # `uv run vibesolve batch` command (always benchmarks)
 │       ├── config/
 │       │   └── settings.py            # AppSettings (pydantic-settings)
 │       ├── models/
@@ -140,5 +140,5 @@ Every generated project uses:
 
 ## Benchmarking & containerization
 
-- **`vibesolve batch` always benchmarks.** After a batch completes, every project is scored on two kinds of columns: those derived straight from the pipeline's own results (*Compiles · Solver runs · Cost · Tokens*) and those measured by building each project, starting the app, and calling its endpoints (*Quarkus runs · Endpoints work · Docker works*). Code lives in `benchmarking/` (`evaluator.py` = Docker stages, `table.py` = derivation + rendering).
+- **`uv run vibesolve batch` always benchmarks.** After a batch completes, every project is scored on two kinds of columns: those derived straight from the pipeline's own results (*Compiles · Solver runs · Cost · Tokens*) and those measured by building each project, starting the app, and calling its endpoints (*Quarkus runs · Endpoints work · Docker works*). Code lives in `benchmarking/` (`evaluator.py` = Docker stages, `table.py` = derivation + rendering).
 - **`--serve` containerizes a generated project.** On success, `packaging.py` emits a `Dockerfile`, `.dockerignore`, and `docker-run.sh` into the project so it can be built and run standalone. The "Docker works" benchmark column builds this `Dockerfile`, so it only scores non-zero when `--serve` is set.
