@@ -136,35 +136,21 @@ provider: openai
 
 # Per-agent model and reasoning effort (none | low | medium | high).
 # --reasoning-effort overrides every agent's effort at once.
+#
+# An optional `_default` key sets the model and/or effort for every agent in a
+# provider block; per-agent entries override it field-by-field. Precedence:
+# per-agent value > _default > built-in default. The openai block below uses it
+# to set one model and only override the two agents that raise their effort;
+# anthropic is shown expanded for contrast.
 provider_models:
   openai:
-    parser:
-      model: gpt-5-mini
-      effort: none
-    model_builder:
-      model: gpt-5-mini
-      effort: none
-    constraint_builder:
-      model: gpt-5-mini
-      effort: none
-    io:
-      model: gpt-5-mini
-      effort: none
-    integrator:
+    _default:
       model: gpt-5-mini
       effort: none
     reviewer:
-      model: gpt-5-mini
       effort: medium
     fixer:
-      model: gpt-5-mini
       effort: high
-    user_validator_explain:
-      model: gpt-5-mini
-      effort: none
-    user_validator_update:
-      model: gpt-5-mini
-      effort: none
   anthropic:
     parser:
       model: claude-haiku-4-5-20251001

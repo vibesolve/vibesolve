@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 import yaml
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,6 +44,31 @@ class AgentModels(BaseModel):
     user_validator_update: AgentModelConfig = Field(
         default_factory=lambda: _default_agent_model("user_validator_update")
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_provider_default(cls, data: object) -> object:
+        """Spread an optional ``_default`` (model and/or effort) across agents.
+
+        A provider block may carry a ``_default`` key at the same level as the
+        agents; its ``model``/``effort`` fill any agent not given explicitly and
+        supply the missing halves of partially-specified agents. Precedence:
+        explicit per-agent value > ``_default`` > built-in per-agent default.
+        """
+        if not isinstance(data, dict):
+            return data
+        default = data.get("_default")
+        data = {k: v for k, v in data.items() if k != "_default"}
+        if not isinstance(default, dict):
+            return data
+        default = {k: v for k, v in default.items() if k in {"model", "effort"}}
+        for agent in cls.model_fields:
+            value = data.get(agent)
+            if value is None:
+                data[agent] = dict(default)
+            elif isinstance(value, dict):
+                data[agent] = {**default, **value}
+        return data
 
     @field_validator("*", mode="before")
     @classmethod

@@ -51,7 +51,7 @@ For shell tab-completion, run `vibesolve --install-completion` once (edits your 
 ## CLI reference
 
 CLI flags override `config.yaml` and environment variables. Run `vibesolve run --help` / `vibesolve batch --help` to see this same list.
-Configure per-agent model IDs and reasoning efforts in `config.yaml` under `provider_models.<provider>.<agent>`, or override one with an environment variable such as `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`.
+Configure per-agent model IDs and reasoning efforts in `config.yaml` under `provider_models.<provider>.<agent>`, or override one with an environment variable such as `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`. A provider block's optional `_default` key sets the model and/or effort for all its agents at once (per-agent value > `_default` > built-in default).
 
 ### `vibesolve run [FILE]`
 

@@ -86,6 +86,70 @@ def test_provider_model_override_without_effort_keeps_agent_default(tmp_path, mo
     assert settings.provider_models["openai"].reviewer.effort == "medium"
 
 
+def test_provider_default_fills_all_agents(tmp_path, monkeypatch):
+    _clear_provider_model_env(monkeypatch)
+
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "provider: deepseek\n"
+        "provider_models:\n"
+        "  deepseek:\n"
+        "    _default:\n"
+        "      model: deepseek-v4-flash\n"
+        "      effort: high\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config)
+    agents = settings.provider_models["deepseek"].as_dict()
+    assert {c.model for c in agents.values()} == {"deepseek-v4-flash"}
+    assert {c.effort for c in agents.values()} == {"high"}
+
+
+def test_provider_default_yields_to_agent_specific(tmp_path, monkeypatch):
+    _clear_provider_model_env(monkeypatch)
+
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "provider_models:\n"
+        "  deepseek:\n"
+        "    _default:\n"
+        "      model: deepseek-v4-flash\n"
+        "      effort: high\n"
+        "    fixer:\n"
+        "      model: deepseek-v4-pro\n",
+        encoding="utf-8",
+    )
+
+    agents = load_settings(config).provider_models["deepseek"].as_dict()
+    # Agent-specific model wins; unspecified effort falls back to the _default.
+    assert agents["fixer"].model == "deepseek-v4-pro"
+    assert agents["fixer"].effort == "high"
+    # Every other agent inherits the _default wholesale.
+    assert agents["parser"].model == "deepseek-v4-flash"
+    assert agents["parser"].effort == "high"
+
+
+def test_provider_default_model_only_keeps_builtin_efforts(tmp_path, monkeypatch):
+    _clear_provider_model_env(monkeypatch)
+
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "provider_models:\n"
+        "  deepseek:\n"
+        "    _default:\n"
+        "      model: deepseek-v4-flash\n",
+        encoding="utf-8",
+    )
+
+    agents = load_settings(config).provider_models["deepseek"].as_dict()
+    assert {c.model for c in agents.values()} == {"deepseek-v4-flash"}
+    # With no _default effort, each agent keeps its built-in per-agent effort.
+    assert agents["parser"].effort == "none"
+    assert agents["reviewer"].effort == "medium"
+    assert agents["fixer"].effort == "high"
+
+
 def test_nested_provider_model_env_overrides_only_matching_yaml_key(tmp_path, monkeypatch):
     _clear_provider_model_env(monkeypatch)
 

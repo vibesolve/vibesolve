@@ -143,12 +143,18 @@ validation → pipeline → cli`; `config` is a leaf used by `cli`.
 `PROVIDER_MODELS__<PROVIDER>__<AGENT>__EFFORT` env vars override per-agent
 model and reasoning-effort settings. Pydantic-settings parses the `__` nesting.
 
+A provider block may carry an optional `_default` key (same level as the agents)
+holding `model` and/or `effort`; a `model_validator(mode="before")` on
+`AgentModels` spreads it across every agent before per-agent defaults are merged.
+Precedence: per-agent value > `_default` > built-in default. As an env override
+its leading underscore means a triple: `PROVIDER_MODELS__DEEPSEEK___DEFAULT__MODEL`.
+
 ## Modifying agent behavior
 
 - **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
 - **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add the agent to `config/settings.py:AgentModels` and each default `provider_models` entry with `model` and `effort`, and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
-- **Per-agent reasoning effort** → `provider_models.<provider>.<agent>.effort` in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none). Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
+- **Per-agent reasoning effort** → `provider_models.<provider>.<agent>.effort` in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none), or set a whole block at once with `provider_models.<provider>._default.effort`. Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
 
 `BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
 through any-llm's unified completion API. `provider` is passed through to

@@ -23,35 +23,19 @@ provider: openai
 # names after compatibility aliases are applied (`claude` -> `anthropic`).
 # Allowed effort values per agent: none | low | medium | high. Override every
 # agent at once from the CLI with --reasoning-effort.
+# An optional `_default` key in a provider block sets the model and/or effort for
+# every agent at once (see the deepseek block below); per-agent entries override
+# it. Precedence: per-agent value > _default > built-in default.
 provider_models:
+  # Every agent uses gpt-5-mini; only the reviewer and fixer raise their effort.
   openai:
-    parser:
-      model: gpt-5-mini
-      effort: none
-    model_builder:
-      model: gpt-5-mini
-      effort: none
-    constraint_builder:
-      model: gpt-5-mini
-      effort: none
-    io:
-      model: gpt-5-mini
-      effort: none
-    integrator:
+    _default:
       model: gpt-5-mini
       effort: none
     reviewer:
-      model: gpt-5-mini
       effort: medium
     fixer:
-      model: gpt-5-mini
       effort: high
-    user_validator_explain:
-      model: gpt-5-mini
-      effort: none
-    user_validator_update:
-      model: gpt-5-mini
-      effort: none
   anthropic:
     parser:
       model: claude-haiku-4-5-20251001
@@ -80,6 +64,10 @@ provider_models:
     user_validator_update:
       model: claude-haiku-4-5-20251001
       effort: none
+  # The optional `_default` key sets the model and/or effort for every agent in
+  # the block; per-agent entries below it override individual agents. Precedence:
+  # per-agent value > _default > built-in default.
+  #
   # DeepSeek V4 controls reasoning via the reasoning_effort parameter on the same
   # model (see api-docs.deepseek.com/guides/thinking_mode) — there is no separate
   # reasoner model. Thinking defaults to ENABLED and low/medium are mapped to high,
@@ -89,31 +77,7 @@ provider_models:
   # Credentials: a real DEEPSEEK_API_KEY env var (a .env.local entry is NOT
   # exported to any-llm) or the generic api_key override.
   deepseek:
-    parser:
-      model: deepseek-v4-flash
-      effort: high
-    model_builder:
-      model: deepseek-v4-flash
-      effort: high
-    constraint_builder:
-      model: deepseek-v4-flash
-      effort: high
-    io:
-      model: deepseek-v4-flash
-      effort: high
-    integrator:
-      model: deepseek-v4-flash
-      effort: high
-    reviewer:
-      model: deepseek-v4-flash
-      effort: high
-    fixer:
-      model: deepseek-v4-flash
-      effort: high
-    user_validator_explain:
-      model: deepseek-v4-flash
-      effort: high
-    user_validator_update:
+    _default:
       model: deepseek-v4-flash
       effort: high
 #   bedrock:
