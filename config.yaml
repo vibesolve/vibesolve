@@ -80,6 +80,42 @@ provider_models:
     user_validator_update:
       model: claude-haiku-4-5-20251001
       effort: none
+  # DeepSeek V4 controls reasoning via the reasoning_effort parameter on the same
+  # model (see api-docs.deepseek.com/guides/thinking_mode) — there is no separate
+  # reasoner model. Thinking defaults to ENABLED and low/medium are mapped to high,
+  # so effort here is effectively high for every agent. Fully disabling thinking
+  # requires extra_body={"thinking": {"type": "disabled"}}, which the current
+  # caller does not send, so all agents run in thinking mode.
+  # Credentials: a real DEEPSEEK_API_KEY env var (a .env.local entry is NOT
+  # exported to any-llm) or the generic api_key override.
+  deepseek:
+    parser:
+      model: deepseek-v4-flash
+      effort: high
+    model_builder:
+      model: deepseek-v4-flash
+      effort: high
+    constraint_builder:
+      model: deepseek-v4-flash
+      effort: high
+    io:
+      model: deepseek-v4-flash
+      effort: high
+    integrator:
+      model: deepseek-v4-flash
+      effort: high
+    reviewer:
+      model: deepseek-v4-flash
+      effort: high
+    fixer:
+      model: deepseek-v4-flash
+      effort: high
+    user_validator_explain:
+      model: deepseek-v4-flash
+      effort: high
+    user_validator_update:
+      model: deepseek-v4-flash
+      effort: high
 #   bedrock:
 #     parser:
 #       model: amazon.nova-lite-v1:0
