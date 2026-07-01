@@ -361,11 +361,11 @@ class AnyLLMAgentCaller(BaseAgentCaller):
             provider_models = self._settings.provider_models.get(self._settings.provider)
         if provider_models is not None:
             return provider_models.as_dict()[agent]
-        if provider == "anthropic":
-            return self._settings.claude_models.as_dict()[agent]
-        if provider == "openai":
-            return self._settings.models.as_dict()[agent]
-        return self._settings.models.as_dict()[agent]
+        raise ValueError(
+            f"No model configuration for provider={self._settings.provider!r}. "
+            f"Add provider_models.{provider}.{agent} to config.yaml or set "
+            f"PROVIDER_MODELS__{provider.upper()}__{agent.upper()}."
+        )
 
     def _call_completion(
         self,

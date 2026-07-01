@@ -140,13 +140,12 @@ validation → pipeline → cli`; `config` is a leaf used by `cli`.
 5. Built-in defaults in `config/settings.py`
 
 `PROVIDER_MODELS__<PROVIDER>__<AGENT>` env vars override per-agent model names.
-Legacy `MODELS__<AGENT>` and `CLAUDE_MODELS__<AGENT>` overrides still work for
-older config files. Pydantic-settings parses the `__` nesting.
+Pydantic-settings parses the `__` nesting.
 
 ## Modifying agent behavior
 
 - **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
-- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add a model default in `config/settings.py:AgentModels` (and compatibility maps such as `ClaudeAgentModels`), and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
+- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add the agent to `config/settings.py:AgentModels` and each default `provider_models` entry, and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
 - **Per-agent reasoning effort** → `config/settings.py:AgentEfforts` and the `efforts:` block in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none). Read in `agents/client.py` via `settings.efforts.as_dict()[agent]`; `--reasoning-effort` overrides every agent at once.
 

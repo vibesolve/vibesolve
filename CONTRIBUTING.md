@@ -7,7 +7,7 @@ Thank you for your interest in contributing! This document covers how to set up 
 - Python 3.11+
 - [Conda](https://docs.conda.io/en/latest/) (recommended) or a virtualenv
 - Docker (required for validation; skip with `--no-validation-loop` during development)
-- An OpenAI API key (or an Anthropic key, for `--provider claude`); provider calls go through any-llm
+- Credentials for the any-llm provider you plan to use, for example an OpenAI API key, an Anthropic API key, or AWS credentials for Bedrock
 
 ## Development Setup
 
@@ -25,7 +25,7 @@ pip install -e ".[dev]"
 
 # 4. API key — gitignored, never committed
 cp .env.example .env.local
-# Now open .env.local and set OPENAI_API_KEY=sk-... (add ANTHROPIC_API_KEY for --provider claude)
+# Now open .env.local and set provider credentials, for example OPENAI_API_KEY=sk-...
 
 ```
 
@@ -51,6 +51,7 @@ For shell tab-completion, run `vibesolve --install-completion` once (edits your 
 ## CLI reference
 
 CLI flags override `config.yaml` and environment variables. Run `vibesolve run --help` / `vibesolve batch --help` to see this same list.
+Configure per-agent model IDs in `config.yaml` under `provider_models.<provider>`, or override one with an environment variable such as `PROVIDER_MODELS__OPENAI__FIXER=gpt-5`.
 
 ### `vibesolve run [FILE]`
 
@@ -61,8 +62,8 @@ CLI flags override `config.yaml` and environment variables. Run `vibesolve run -
 | `--serve` | off | On success, emit `Dockerfile` + `docker-run.sh` into the generated project. |
 | `--user-validate` | off | Pause after parsing to review and correct the spec before code generation. |
 | `--config PATH` | `config.yaml` if present | YAML config file. |
-| `--provider openai\|claude` | `openai` | Compatibility provider name routed through any-llm. |
-| `--reasoning-effort low\|medium\|high` | per-agent config | Override reasoning effort for all agents at once. |
+| `--provider PROVIDER` | `openai` | any-llm provider name, for example `openai`, `anthropic`, or `bedrock`; `claude` aliases to `anthropic`. |
+| `--reasoning-effort none\|low\|medium\|high` | per-agent config | Override reasoning effort for all agents at once. |
 | `--max-iterations N` | `max_fix_iterations` (10) | Max fixer agent iterations. |
 | `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |
 
@@ -75,7 +76,7 @@ CLI flags override `config.yaml` and environment variables. Run `vibesolve run -
 | `--input-dir PATH` | `user_input` | Directory to scan for `*.txt` files. |
 | `--serve` | off | Emit `Dockerfile` + `docker-run.sh` into each successfully-generated project. |
 | `--config PATH` | `config.yaml` if present | YAML config file. |
-| `--provider openai\|claude` | `openai` | Compatibility provider name routed through any-llm. |
+| `--provider PROVIDER` | `openai` | any-llm provider name, for example `openai`, `anthropic`, or `bedrock`; `claude` aliases to `anthropic`. |
 | `--workers N` | `default_workers` (3) | Number of parallel workers. |
 | `--max-iterations N` | `max_fix_iterations` (10) | Max fixer iterations per problem. |
 | `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |

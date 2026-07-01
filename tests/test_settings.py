@@ -14,10 +14,9 @@ def test_builtin_defaults():
     assert settings.efforts.reviewer == "medium"
     assert settings.efforts.fixer == "high"
     # Nested per-agent model defaults are populated.
-    assert settings.models.parser == "gpt-5-mini"
-    assert settings.claude_models.user_validator_explain == "claude-haiku-4-5-20251001"
-    assert settings.claude_models.user_validator_update == "claude-haiku-4-5-20251001"
-    assert settings.provider_models == {}
+    assert settings.provider_models["openai"].parser == "gpt-5-mini"
+    assert settings.provider_models["anthropic"].user_validator_explain == "claude-haiku-4-5-20251001"
+    assert settings.provider_models["anthropic"].user_validator_update == "claude-haiku-4-5-20251001"
 
 
 def test_yaml_overrides_defaults(tmp_path, monkeypatch):
@@ -85,7 +84,7 @@ def test_arbitrary_provider_and_provider_model_overrides(tmp_path, monkeypatch):
     assert settings.provider_models["bedrock"].fixer == "amazon.nova-pro-v1:0"
 
 
-def test_legacy_root_model_env_overrides_still_work(tmp_path, monkeypatch):
+def test_root_model_keys_are_ignored(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text(
         "models:\n"
@@ -96,8 +95,8 @@ def test_legacy_root_model_env_overrides_still_work(tmp_path, monkeypatch):
     monkeypatch.setenv("MODELS__FIXER", "env-fixer")
 
     settings = load_settings(config)
-    assert settings.models.parser == "yaml-parser"
-    assert settings.models.fixer == "env-fixer"
+    assert settings.provider_models["openai"].parser == "gpt-5-mini"
+    assert settings.provider_models["openai"].fixer == "gpt-5-mini"
 
 
 def test_nested_non_default_provider_model_env_overrides_only_matching_yaml_key(tmp_path, monkeypatch):

@@ -23,6 +23,23 @@ class AgentModels(BaseModel):
         return self.model_dump()
 
 
+def _default_provider_models() -> dict[str, AgentModels]:
+    return {
+        "openai": AgentModels(),
+        "anthropic": AgentModels(
+            parser="claude-haiku-4-5-20251001",
+            model_builder="claude-haiku-4-5-20251001",
+            constraint_builder="claude-haiku-4-5-20251001",
+            io="claude-haiku-4-5-20251001",
+            integrator="claude-haiku-4-5-20251001",
+            reviewer="claude-sonnet-4-6",
+            fixer="claude-sonnet-4-6",
+            user_validator_explain="claude-haiku-4-5-20251001",
+            user_validator_update="claude-haiku-4-5-20251001",
+        ),
+    }
+
+
 EffortLevel = Literal["none", "low", "medium", "high"]
 
 
@@ -44,27 +61,6 @@ class AgentEfforts(BaseModel):
     fixer: EffortLevel = "high"
     user_validator_explain: EffortLevel = "none"
     user_validator_update: EffortLevel = "none"
-
-    def as_dict(self) -> dict[str, str]:
-        return self.model_dump()
-
-
-class ClaudeAgentModels(BaseModel):
-    """Anthropic/Claude model names per agent.
-
-    Defaults: cheap haiku for fast generation stages; sonnet for reviewer/fixer
-    (which run with extended thinking at medium/high effort).
-    """
-
-    parser: str = "claude-haiku-4-5-20251001"
-    model_builder: str = "claude-haiku-4-5-20251001"
-    constraint_builder: str = "claude-haiku-4-5-20251001"
-    io: str = "claude-haiku-4-5-20251001"
-    integrator: str = "claude-haiku-4-5-20251001"
-    reviewer: str = "claude-sonnet-4-6"
-    fixer: str = "claude-sonnet-4-6"
-    user_validator_explain: str = "claude-haiku-4-5-20251001"
-    user_validator_update: str = "claude-haiku-4-5-20251001"
 
     def as_dict(self) -> dict[str, str]:
         return self.model_dump()
@@ -98,12 +94,8 @@ class AppSettings(BaseSettings):
     # Per-agent reasoning effort (applies to whichever any-llm provider is active)
     efforts: AgentEfforts = Field(default_factory=AgentEfforts)
 
-    # Model configuration. ``provider_models.<provider>`` is the preferred
-    # config shape. ``models`` and ``claude_models`` are kept as built-in
-    # defaults and compatibility aliases for older config files.
-    models: AgentModels = Field(default_factory=AgentModels)
-    claude_models: ClaudeAgentModels = Field(default_factory=ClaudeAgentModels)
-    provider_models: dict[str, AgentModels] = Field(default_factory=dict)
+    # Model configuration keyed by any-llm provider name.
+    provider_models: dict[str, AgentModels] = Field(default_factory=_default_provider_models)
 
 
 _DEFAULT_CONFIG = Path("config.yaml")
@@ -164,10 +156,7 @@ def load_settings(config_file: Path | None = None) -> "AppSettings":
 
     # Init kwargs have higher priority than env vars in pydantic-settings. For
     # nested sections supplied by YAML, merge the specific nested env override
-    # into the YAML dict so siblings keep their YAML values. MODELS__* and
-    # CLAUDE_MODELS__* are legacy shortcuts; prefer PROVIDER_MODELS__*.
-    _merge_nested_env("models", "MODELS__")
-    _merge_nested_env("claude_models", "CLAUDE_MODELS__")
+    # into the YAML dict so siblings keep their YAML values.
     _merge_nested_env("efforts", "EFFORTS__")
     _merge_provider_models_env()
 

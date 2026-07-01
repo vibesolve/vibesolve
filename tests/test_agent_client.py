@@ -114,7 +114,7 @@ def test_openai_raw_call_returns_json_and_tracks_tokens(tmp_path):
     assert calls[0]["response_format"]["type"] == "json_schema"
     assert calls[0]["reasoning_effort"] is None
     assert caller.agent_tokens["parser"] == {
-        "model": settings.models.parser,
+        "model": settings.provider_models["openai"].parser,
         "input_tokens": 10,
         "cached_input_tokens": 2,
         "output_tokens": 3,
@@ -228,7 +228,7 @@ def test_claude_typed_call_falls_back_when_structured_is_rejected(tmp_path):
     assert delta.changed_files[0].path == "pom.xml"
     assert len(calls) == 2
     assert caller.agent_tokens["fixer"] == {
-        "model": settings.claude_models.fixer,
+        "model": settings.provider_models["anthropic"].fixer,
         "input_tokens": 6,
         "cached_input_tokens": 2,
         "output_tokens": 3,
@@ -287,7 +287,22 @@ def test_typed_call_falls_back_when_provider_rejects_all_response_formats(tmp_pa
                 ]
             )
 
-    settings = AppSettings(provider="bedrock")
+    settings = AppSettings(
+        provider="bedrock",
+        provider_models={
+            "bedrock": {
+                "parser": "unused-parser",
+                "model_builder": "unused-model-builder",
+                "constraint_builder": "unused-constraint-builder",
+                "io": "unused-io",
+                "integrator": "unused-integrator",
+                "reviewer": "unused-reviewer",
+                "fixer": "amazon.nova-pro-v1:0",
+                "user_validator_explain": "unused-explain",
+                "user_validator_update": "unused-update",
+            }
+        },
+    )
     caller = _caller(tmp_path, FakeClient(), settings)
 
     delta = caller.call_typed("fixer", "{}", Delta)
@@ -297,3 +312,15 @@ def test_typed_call_falls_back_when_provider_rejects_all_response_formats(tmp_pa
     assert calls[0]["response_format"] is Delta
     assert calls[1]["response_format"]["type"] == "json_schema"
     assert "response_format" not in calls[2]
+
+
+def test_missing_provider_model_config_fails_before_call(tmp_path):
+    class FakeClient:
+        def completion(self, **_params):
+            raise AssertionError("provider should fail before making a request")
+
+    settings = AppSettings(provider="bedrock")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    with pytest.raises(ValueError, match="No model configuration for provider='bedrock'"):
+        caller.call_typed("fixer", "{}", Delta)
