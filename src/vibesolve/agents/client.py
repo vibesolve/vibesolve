@@ -82,8 +82,18 @@ def _extract_and_repair(text: str) -> str:
     return repair_json(text)
 
 
-def _reasoning_effort(effort: str) -> str | None:
-    return None if effort == "none" else effort
+def _reasoning_effort(effort: str) -> str:
+    """Map our effort level to an any-llm ``reasoning_effort`` value.
+
+    We deliberately pass ``"none"`` through as a *string* rather than collapsing
+    it to Python ``None``. any-llm drops ``None`` via ``model_dump(exclude_none=
+    True)``, which lets the provider apply its own default reasoning — e.g. gpt-5
+    defaults to ``"medium"``, the opposite of what ``effort="none"`` intends. The
+    literal ``"none"`` is a valid any-llm/OpenAI ``reasoning_effort`` and
+    Anthropic maps it to thinking disabled, so both first-class providers honor
+    it as "minimal / no reasoning".
+    """
+    return effort
 
 
 def _raw_json_response_format() -> dict[str, Any]:
@@ -222,16 +232,9 @@ class BaseAgentCaller(ABC):
     def call(self, agent: str, user_message: str) -> str:
         """Call an agent and return the raw response string (expected to be JSON)."""
 
+    @abstractmethod
     def call_typed(self, agent: str, user_message: str, model_type: type[T]) -> T:
         """Call an agent and parse the response into a typed Pydantic model."""
-        last_exc: Exception | None = None
-        for _ in range(3):
-            raw = self.call(agent, user_message)
-            try:
-                return model_type.model_validate_json(raw)  # type: ignore[attr-defined]
-            except Exception as exc:
-                last_exc = exc
-        raise last_exc  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +287,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                     attempt=attempt,
                 )
             except Exception as exc:
-                if use_structured:
+                if use_structured and _looks_like_unsupported_response_format(exc):
                     structured_unavailable = True
                     self._log.warning(
                         "structured_output_fallback",
@@ -453,7 +456,13 @@ def _api_key_for(settings: AppSettings) -> str:
 
 def _looks_like_unsupported_response_format(exc: Exception) -> bool:
     text = f"{type(exc).__name__}: {exc}".lower()
-    return "response_format" in text or "structured output" in text or "json_schema" in text
+    return (
+        "response_format" in text
+        or "response format" in text
+        or "structured" in text
+        or "json_schema" in text
+        or "json schema" in text
+    )
 
 
 # ---------------------------------------------------------------------------

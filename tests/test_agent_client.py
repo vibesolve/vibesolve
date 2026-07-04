@@ -128,7 +128,8 @@ def test_openai_raw_call_returns_json_and_tracks_tokens(tmp_path):
 
     assert json.loads(raw) == {"problemType": "test"}
     assert calls[0]["response_format"]["type"] == "json_schema"
-    assert calls[0]["reasoning_effort"] is None
+    # "none" effort is sent as the string (not Python None, which any-llm drops).
+    assert calls[0]["reasoning_effort"] == "none"
     assert caller.agent_tokens["parser"] == {
         "model": settings.provider_models["openai"].parser.model,
         "input_tokens": 10,
@@ -181,7 +182,8 @@ def test_claude_default_none_effort_disables_reasoning_through_any_llm(tmp_path)
     delta = caller.call_typed("model_builder", "{}", Delta)
 
     assert delta.changed_files[0].path == "pom.xml"
-    assert calls[0]["reasoning_effort"] is None
+    # Anthropic maps the "none" string to thinking disabled, same as before.
+    assert calls[0]["reasoning_effort"] == "none"
 
 
 def test_claude_high_effort_passes_through_any_llm(tmp_path):
@@ -316,3 +318,26 @@ def test_missing_provider_model_config_fails_before_call(tmp_path):
 
     with pytest.raises(ValueError, match="No model configuration for provider='bedrock'"):
         caller.call_typed("fixer", "{}", Delta)
+
+
+def test_typed_call_reraises_non_format_errors_without_downgrading(tmp_path):
+    """A non-format error on a structured call must surface immediately.
+
+    It must NOT be swallowed as "structured output unavailable" and silently
+    retried without structured output — that would mask transient/auth failures.
+    """
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            raise RuntimeError("upstream connection reset")
+
+    settings = AppSettings(provider="openai", openai_api_key="openai-key")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    with pytest.raises(RuntimeError, match="connection reset"):
+        caller.call_typed("fixer", "{}", Delta)
+
+    # No fallback attempts: the error is raised on the very first call.
+    assert len(calls) == 1
