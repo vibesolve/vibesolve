@@ -64,7 +64,7 @@ def run(
     ] = None,
     provider: Annotated[
         Optional[str],
-        typer.Option("--provider", help="LLM provider: openai|claude (default: openai)."),
+        typer.Option("--provider", help="any-llm provider name, e.g. openai, anthropic, bedrock. The legacy alias claude maps to anthropic."),
     ] = None,
     serve: Annotated[
         bool,
@@ -109,6 +109,9 @@ def run(
             raise typer.Exit(code=1)
 
     n_workers = min(settings.default_workers, len(input_files))
+    if n_workers < 1:
+        typer.echo("ERROR: --workers must be at least 1.", err=True)
+        raise typer.Exit(code=1)
     enable_docker = settings.enable_docker_validation
 
     caller_factory = make_caller_factory(settings)
