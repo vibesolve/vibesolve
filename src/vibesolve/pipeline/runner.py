@@ -127,8 +127,7 @@ def run_problem(
         pipeline_start = time.time()
 
         # 1) Parser: raw text → ProblemSpec
-        parser_raw = caller.call("parser", raw_problem)
-        problem_spec = ProblemSpec.model_validate_json(parser_raw)
+        problem_spec = caller.call_typed("parser", raw_problem, ProblemSpec)
         log.info("parser_complete", problem_type=problem_spec.problem_type)
 
         # 1b) Optional user validation: review/correct ProblemSpec before generation
