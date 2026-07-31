@@ -78,7 +78,7 @@ Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTIN
 
 ## Configuration
 
-Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); use any installed any-llm provider name with `--provider`, with `claude` kept as an alias for `anthropic`. Per-agent model IDs and reasoning efforts are configured under `provider_models.<provider>.<agent>`; an optional `_default` key in a provider block sets the model and/or effort for every agent at once, with per-agent entries overriding it.
+Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); use any installed any-llm provider name with `--provider`, with `claude` kept as an alias for `anthropic`. Per-agent model IDs and reasoning efforts are configured under `provider_models.<provider>.<agent>`; an optional `_default` key in a provider block sets the model and/or effort for every agent at once, with per-agent entries overriding it. To run without a paid API key, use `--provider openrouter` with a free model from openrouter.ai — see the `openrouter` block in `config.yaml`.
 
 ## Prerequisites
 

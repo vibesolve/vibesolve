@@ -108,6 +108,14 @@ provider_models:
 #     user_validator_update:
 #       model: amazon.nova-lite-v1:0
 #       effort: none
+# OpenRouter - place API key in .env.local under API_KEY=
+# Any model slug ending in :free works here; free models change frequently,
+# so verify the slug at openrouter.ai/models?q=free before using.
+# Run with: vibesolve run --provider openrouter
+#  openrouter:
+#    _default:
+#      model: nvidia/nemotron-3-ultra-550b-a55b:free
+#      effort: none
 
 # --- General runtime settings ---
 
