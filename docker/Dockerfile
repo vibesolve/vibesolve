@@ -1,7 +1,7 @@
 # Timefold Solver Project Validator
 # Java 17 + Maven environment for compiling and running generated projects
 
-FROM eclipse-temurin:17-jdk-jammy
+FROM eclipse-temurin:22-jdk-jammy
 
 # Install Maven
 RUN apt-get update && \
