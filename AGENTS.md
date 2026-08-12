@@ -20,13 +20,13 @@ Python source under `src/vibesolve/` with the generated artifacts under
 ## Setup (one-time)
 
 ```bash
-conda activate vibesolve            # ALWAYS activate first — required for every command
-pip install -e ".[dev]"             # installs the package, CLI, and test deps (pytest)
+uv sync --extra dev                 # creates .venv and installs package + test deps
+source .venv/bin/activate           # once per shell — puts `vibesolve` and `pytest` on PATH
 cp .env.example .env.local          # then fill in OPENAI_API_KEY
 docker build -t timefold-validator docker/   # pre-bakes Maven deps into the validator image
 ```
 
-Python 3.11+ is required (modern type annotations). If `conda activate vibesolve` fails, create the env first: `conda create -n vibesolve python=3.11 -y`.
+Python 3.11+ is required (modern type annotations). Every command in this file assumes the venv is activated; without activation, prefix with `uv run` (e.g. `uv run pytest`). If uv cannot find a suitable Python, install one with `uv python install 3.13`.
 
 For the Anthropic/Claude provider, add `ANTHROPIC_API_KEY=...` to `.env.local` and pass `--provider claude` (or set it in `config.yaml`).
 

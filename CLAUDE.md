@@ -14,11 +14,11 @@ Multi-agent system that generates complete Timefold Solver projects from natural
 ## Setup
 
 ```bash
-# IMPORTANT: Always activate the conda environment first
-conda activate vibesolve
+# Create the environment and install the package (do this once, or after adding dependencies)
+uv sync --extra dev
 
-# Install the package (reads pyproject.toml — do this once, or after adding dependencies)
-pip install -e .
+# Activate it — once per shell; puts `vibesolve` and `pytest` on PATH
+source .venv/bin/activate
 
 # Configure API key
 # Create .env.local with OPENAI_API_KEY=your-key
@@ -27,7 +27,7 @@ pip install -e .
 docker build -t timefold-validator docker/
 ```
 
-**Important:** This project requires Python 3.11+ for modern type annotations. Always use `conda activate vibesolve` before running any Python commands.
+**Important:** This project requires Python 3.11+ for modern type annotations. All commands below assume the venv is activated. In a shell where it isn't, prefix the command with `uv run` (e.g. `uv run vibesolve run`) — uv picks the project environment automatically.
 
 ## Running the Pipeline
 

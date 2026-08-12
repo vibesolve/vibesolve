@@ -13,26 +13,29 @@ Describe an optimization problem in plain English. Get a complete, runnable [Tim
 ## Setup
 
 ```bash
+# Install uv (skip if you already have it)
+curl -LsSf https://astral.sh/uv/install.sh | sh          # macOS / Linux
+# Windows (PowerShell): powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
 git clone https://github.com/vibesolve/vibesolve.git
 cd vibesolve
 
-conda create -n vibesolve python=3.11 -y
-conda activate vibesolve
-pip install -e .
+uv sync                      # creates .venv/ and installs vibesolve
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 
 # API key - gitignored, never committed
 cp .env.example .env.local
 # now open .env.local and set OPENAI_API_KEY=sk-...
 ```
 
+With the environment activated, `vibesolve` is on your `PATH` — no prefix needed. Activation lasts for the shell session; in a fresh shell either re-run `source .venv/bin/activate` or prefix a one-off command with `uv run` (e.g. `uv run vibesolve run`).
+
 ## Usage
 
 Start Docker on your machine: Linux run `sudo systemctl start docker`, macOS or Windows launch Docker Desktop.
 
-Activate the environment:
-
 ```bash
-conda activate vibesolve
+vibesolve --help
 ```
 
 Solve the bundled school-timetabling example:
@@ -83,8 +86,9 @@ Settings live in `config.yaml` at the project root, loaded automatically. Pass `
 
 | Requirement | Notes |
 |---|---|
-| Python 3.11+ | the setup steps use conda |
-| Docker 20+ | for automated validation |
+| [uv](https://docs.astral.sh/uv/) | manages the environment and installs Python if needed |
+| Python 3.11+ | `uv sync` installs a suitable version automatically |
+| Docker 20+ | for automated validation; skippable with `--no-validation-loop` |
 | LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude` |
 
 ## How it works

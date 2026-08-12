@@ -4,8 +4,8 @@ Thank you for your interest in contributing! This document covers how to set up 
 
 ## Prerequisites
 
-- Python 3.11+
-- [Conda](https://docs.conda.io/en/latest/) (recommended) or a virtualenv
+- [uv](https://docs.astral.sh/uv/) — install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows)
+- Python 3.11+ (`uv sync` installs a suitable interpreter if you don't have one)
 - Docker (required for validation; skip with `--no-validation-loop` during development)
 - An OpenAI API key (or an Anthropic key, for `--provider claude`)
 
@@ -16,12 +16,11 @@ Thank you for your interest in contributing! This document covers how to set up 
 git clone https://github.com/vibesolve/vibesolve.git
 cd vibesolve
 
-# 2. Create and activate the environment
-conda create -n vibesolve python=3.11 -y
-conda activate vibesolve   # or: python -m venv .venv && source .venv/bin/activate
+# 2. Create the environment and install the package with dev/test dependencies
+uv sync --extra dev
 
-# 3. Install in editable mode, with dev/test dependencies
-pip install -e ".[dev]"
+# 3. Activate it — once per shell; puts `vibesolve` and `pytest` on PATH
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # 4. API key — gitignored, never committed
 cp .env.example .env.local
@@ -37,14 +36,17 @@ cp .env.example .env.local
 
 ## Running the Pipeline
 
+Activate the environment once per shell (`source .venv/bin/activate`), then:
+
 ```bash
-conda activate vibesolve   # once per shell
 # start Docker — Linux: sudo systemctl start docker  |  macOS/Windows: launch Docker Desktop
 
 vibesolve run            # the bundled example
 vibesolve run --serve    # also emit a Dockerfile + docker-run.sh
 vibesolve batch          # every *.txt in user_input/, in parallel
 ```
+
+Don't want to activate? Any command also works as `uv run <command>` (e.g. `uv run vibesolve run`, `uv run pytest`) — uv resolves the project environment itself and re-syncs it if `pyproject.toml` changed.
 
 For shell tab-completion, run `vibesolve --install-completion` once (edits your personal shell config).
 

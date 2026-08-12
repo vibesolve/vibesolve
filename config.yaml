@@ -62,5 +62,5 @@ enable_docker_validation: true
 # Maximum number of Fixer agent iterations per problem before giving up.
 max_fix_iterations: 10
 
-# Default number of parallel workers for vibesolve batch.
+# Default number of parallel workers for `vibesolve batch`.
 default_workers: 3
