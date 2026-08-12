@@ -9,6 +9,7 @@ import io
 import tarfile
 
 import pytest
+from pydantic import ValidationError
 
 from vibesolve.models.domain import ProjectManifest, FileEntry
 from vibesolve.pipeline.runner import _write_manifest
@@ -16,13 +17,22 @@ from vibesolve.validation.docker_validator import DockerValidator
 
 
 def test_fileentry_rejects_parent_traversal():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         FileEntry(path="../escape.txt", content="x")
 
 
 def test_fileentry_rejects_absolute_path():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         FileEntry(path="/etc/cron.d/evil", content="x")
+
+
+def test_fileentry_rejects_empty_path():
+    # an empty path resolves to the project dir itself, which passes the sink
+    # checks and then fails with IsADirectoryError on write
+    with pytest.raises(ValidationError):
+        FileEntry(path="", content="x")
+    with pytest.raises(ValidationError):
+        FileEntry(path="   ", content="x")
 
 
 def test_fileentry_accepts_normal_nested_path():
@@ -38,7 +48,7 @@ def test_write_manifest_contains_relative_path_that_bypassed_validation(tmp_path
     out_dir.mkdir()
     bad = FileEntry.model_construct(path="../escaped.txt", content="x")
     manifest = ProjectManifest(projectName="p", basePackage="b", files=[bad])
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="refusing to write outside project dir"):
         _write_manifest(manifest, out_dir)
     assert not (tmp_path / "escaped.txt").exists()
 
@@ -49,7 +59,7 @@ def test_write_manifest_contains_absolute_path_that_bypassed_validation(tmp_path
     target = tmp_path / "abs_escaped.txt"
     bad = FileEntry.model_construct(path=str(target), content="x")
     manifest = ProjectManifest(projectName="p", basePackage="b", files=[bad])
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="refusing to write outside project dir"):
         _write_manifest(manifest, out_dir)
     assert not target.exists()
 
@@ -68,7 +78,7 @@ def test_write_manifest_writes_normal_files(tmp_path):
 
 def test_create_tar_archive_rejects_escaping_paths():
     v = DockerValidator(container_name="audit-test")
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="unsafe file path in manifest"):
         v.create_tar_archive({"files": [{"path": "../escaped_in_tar.txt", "content": "x"}]})
 
 
@@ -76,5 +86,5 @@ def test_create_tar_archive_accepts_normal_paths():
     # regression guard
     v = DockerValidator(container_name="audit-test")
     data = v.create_tar_archive({"files": [{"path": "src/A.java", "content": "x"}]})
-    names = tarfile.open(fileobj=io.BytesIO(data)).getnames()
-    assert names == ["src/A.java"]
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        assert tar.getnames() == ["src/A.java"]
