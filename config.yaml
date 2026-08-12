@@ -1,8 +1,8 @@
 # VibeSolve - configuration file
 #
 # Usage:
-#   uv run vibesolve run --config config.yaml
-#   uv run vibesolve batch --config config.yaml
+#   vibesolve run --config config.yaml
+#   vibesolve batch --config config.yaml
 #
 # Priority (highest → lowest):
 #   1. CLI flags              (e.g. --provider=claude, --reasoning-effort=high)
@@ -62,5 +62,5 @@ enable_docker_validation: true
 # Maximum number of Fixer agent iterations per problem before giving up.
 max_fix_iterations: 10
 
-# Default number of parallel workers for `uv run vibesolve batch`.
+# Default number of parallel workers for `vibesolve batch`.
 default_workers: 3

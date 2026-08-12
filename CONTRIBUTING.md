@@ -4,8 +4,8 @@ Thank you for your interest in contributing! This document covers how to set up 
 
 ## Prerequisites
 
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/) for environment and command execution
+- [uv](https://docs.astral.sh/uv/) — install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows)
+- Python 3.11+ (`uv sync` installs a suitable interpreter if you don't have one)
 - Docker (required for validation; skip with `--no-validation-loop` during development)
 - An OpenAI API key (or an Anthropic key, for `--provider claude`)
 
@@ -19,7 +19,10 @@ cd vibesolve
 # 2. Create the environment and install the package with dev/test dependencies
 uv sync --extra dev
 
-# 3. API key — gitignored, never committed
+# 3. Activate it — once per shell; puts `vibesolve` and `pytest` on PATH
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+# 4. API key — gitignored, never committed
 cp .env.example .env.local
 # Now open .env.local and set OPENAI_API_KEY=sk-... (add ANTHROPIC_API_KEY for --provider claude)
 
@@ -33,21 +36,25 @@ cp .env.example .env.local
 
 ## Running the Pipeline
 
+Activate the environment once per shell (`source .venv/bin/activate`), then:
+
 ```bash
 # start Docker — Linux: sudo systemctl start docker  |  macOS/Windows: launch Docker Desktop
 
-uv run vibesolve run            # the bundled example
-uv run vibesolve run --serve    # also emit a Dockerfile + docker-run.sh
-uv run vibesolve batch          # every *.txt in user_input/, in parallel
+vibesolve run            # the bundled example
+vibesolve run --serve    # also emit a Dockerfile + docker-run.sh
+vibesolve batch          # every *.txt in user_input/, in parallel
 ```
 
-For shell tab-completion, run `uv run vibesolve --install-completion` once (edits your personal shell config).
+Don't want to activate? Any command also works as `uv run <command>` (e.g. `uv run vibesolve run`, `uv run pytest`) — uv resolves the project environment itself and re-syncs it if `pyproject.toml` changed.
+
+For shell tab-completion, run `vibesolve --install-completion` once (edits your personal shell config).
 
 ## CLI reference
 
-CLI flags override `config.yaml` and environment variables. Run `uv run vibesolve run --help` / `uv run vibesolve batch --help` to see this same list.
+CLI flags override `config.yaml` and environment variables. Run `vibesolve run --help` / `vibesolve batch --help` to see this same list.
 
-### `uv run vibesolve run [FILE]`
+### `vibesolve run [FILE]`
 
 `FILE` — problem description text file (default: `user_input/timetable.txt`).
 
@@ -61,7 +68,7 @@ CLI flags override `config.yaml` and environment variables. Run `uv run vibesolv
 | `--max-iterations N` | `max_fix_iterations` (10) | Max fixer agent iterations. |
 | `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |
 
-### `uv run vibesolve batch [FILES...]`
+### `vibesolve batch [FILES...]`
 
 `FILES` — input problem files (default: all `*.txt` in `--input-dir`).
 
@@ -82,7 +89,7 @@ CLI flags override `config.yaml` and environment variables. Run `uv run vibesolv
 Run the test suite with:
 
 ```bash
-uv run --extra dev pytest
+pytest
 ```
 
 The tests are offline — no API key or Docker required — and cover the CLI surface, settings resolution, and the core model/merge logic. Please add or update tests when changing that behavior.

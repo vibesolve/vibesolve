@@ -13,42 +13,47 @@ Describe an optimization problem in plain English. Get a complete, runnable [Tim
 ## Setup
 
 ```bash
+# Install uv (skip if you already have it)
+curl -LsSf https://astral.sh/uv/install.sh | sh          # macOS / Linux
+# Windows (PowerShell): powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
 git clone https://github.com/vibesolve/vibesolve.git
 cd vibesolve
 
-uv sync
+uv sync                      # creates .venv/ and installs vibesolve
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 
 # API key - gitignored, never committed
 cp .env.example .env.local
 # now open .env.local and set OPENAI_API_KEY=sk-...
 ```
 
+With the environment activated, `vibesolve` is on your `PATH` — no prefix needed. Activation lasts for the shell session; in a fresh shell either re-run `source .venv/bin/activate` or prefix a one-off command with `uv run` (e.g. `uv run vibesolve run`).
+
 ## Usage
 
 Start Docker on your machine: Linux run `sudo systemctl start docker`, macOS or Windows launch Docker Desktop.
 
-Run commands through uv:
-
 ```bash
-uv run vibesolve --help
+vibesolve --help
 ```
 
 Solve the bundled school-timetabling example:
 
 ```bash
-uv run vibesolve run
+vibesolve run
 ```
 
 Solve your own problem file:
 
 ```bash
-uv run vibesolve run user_input/my-problem.txt
+vibesolve run user_input/my-problem.txt
 ```
 
 Solve every `*.txt` in `user_input/`, in parallel:
 
 ```bash
-uv run vibesolve batch
+vibesolve batch
 ```
 
 ### Common flags
@@ -56,22 +61,22 @@ uv run vibesolve batch
 Also emit a Dockerfile and `docker-run.sh` next to the generated project:
 
 ```bash
-uv run vibesolve run --serve
+vibesolve run --serve
 ```
 
 Review the parsed spec before code generation begins:
 
 ```bash
-uv run vibesolve run --user-validate
+vibesolve run --user-validate
 ```
 
 Run a batch with more parallel workers (default 3):
 
 ```bash
-uv run vibesolve batch --workers 5
+vibesolve batch --workers 5
 ```
 
-Run `uv run vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTING.md#cli-reference). Generated projects land in `results/run_<timestamp>/`. Structured logs in `logs/run_<timestamp>/`.
+Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTING.md#cli-reference). Generated projects land in `results/run_<timestamp>/`. Structured logs in `logs/run_<timestamp>/`.
 
 ## Configuration
 
@@ -81,8 +86,8 @@ Settings live in `config.yaml` at the project root, loaded automatically. Pass `
 
 | Requirement | Notes |
 |---|---|
-| Python 3.11+ | via conda recommended |
-| uv | install from <https://docs.astral.sh/uv/> |
+| [uv](https://docs.astral.sh/uv/) | manages the environment and installs Python if needed |
+| Python 3.11+ | `uv sync` installs a suitable version automatically |
 | Docker 20+ | for automated validation; skippable with `--no-validation-loop` |
 | LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude` |
 
