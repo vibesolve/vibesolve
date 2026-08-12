@@ -193,13 +193,17 @@ def run_problem(
         (results_dir / "ProjectManifest.json").write_text(
             json.dumps(manifest.to_legacy_dict(), indent=2), encoding="utf-8"
         )
+        if not manifest.project_name:
+            raise ValueError(
+                "no project name was produced by the pipeline; refusing to write "
+                "output into the results root"
+            )
         project_dir = results_dir / manifest.project_name
         _write_manifest(manifest, project_dir)
-        _zip_dir(project_dir, results_dir / f"{manifest.project_name}.zip")
 
-        # Emit Docker artifacts when --serve was requested AND the project
-        # actually succeeded validation. We do NOT emit on failure — the user
-        # asked for a runnable artifact, not a broken one.
+        # Emit Docker artifacts when --serve was requested AND the project actually
+        # succeeded validation — BEFORE zipping, so the .zip contains them. We do NOT
+        # emit on failure: the user asked for a runnable artifact, not a broken one.
         if serve and validation_success:
             try:
                 emit_docker_artifacts(project_dir, manifest.project_name)
@@ -209,6 +213,8 @@ def run_problem(
                 log.warning("docker_artifacts_emit_failed", error=str(exc))
         elif serve and not validation_success:
             log.warning("docker_artifacts_skipped_failed_validation")
+
+        _zip_dir(project_dir, results_dir / f"{manifest.project_name}.zip")
 
         total_time_s = time.time() - total_start
         log.info(
