@@ -14,7 +14,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, asdict
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional
 
 
@@ -181,6 +181,10 @@ class DockerValidator:
         with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
             for file_entry in manifest.get("files", []):
                 file_path = file_entry["path"]
+                # Defense-in-depth against an unsafe path reaching the container tar.
+                p = PurePosixPath(file_path)
+                if p.is_absolute() or ".." in p.parts:
+                    raise ValueError(f"unsafe file path in manifest: {file_path!r}")
                 content = file_entry["content"].encode('utf-8')
 
                 info = tarfile.TarInfo(name=file_path)

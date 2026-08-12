@@ -1,9 +1,25 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pathlib import PurePosixPath
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class FileEntry(BaseModel):
     path: str
     content: str
+
+    @field_validator("path")
+    @classmethod
+    def _reject_unsafe_path(cls, v: str) -> str:
+        """Reject empty, absolute and parent-traversal paths. FileEntry paths come
+        from LLM output and are written to disk / packed into a tar, so an absolute
+        or '..' path could escape the project directory. An empty path resolves to
+        the project dir itself and fails later with a confusing IsADirectoryError."""
+        if not v.strip():
+            raise ValueError("file path must not be empty")
+        p = PurePosixPath(v)
+        if p.is_absolute() or ".." in p.parts:
+            raise ValueError(f"unsafe file path (absolute or parent-traversal): {v!r}")
+        return v
 
 
 class ProjectManifest(BaseModel):
