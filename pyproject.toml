@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "openai>=2.53.0",
+    "openai>=3.1.0",
     "anthropic>=0.121.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.15.0",
