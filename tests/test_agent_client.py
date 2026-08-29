@@ -301,6 +301,87 @@ def test_auto_effort_omits_reasoning_parameter(tmp_path):
     assert "reasoning_effort" not in calls[0]
 
 
+def test_rate_limit_honors_retry_after_without_consuming_generated_attempt(monkeypatch, tmp_path):
+    calls: list[dict] = []
+    sleeps: list[float] = []
+
+    class ProviderRateLimitError(Exception):
+        status_code = 429
+        headers = {"retry-after": "7"}
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if len(calls) == 1:
+                raise ProviderRateLimitError("rate limited")
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=Delta(changed_files=[])))]
+            )
+
+    monkeypatch.setattr("vibesolve.agents.client.time.sleep", sleeps.append)
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files == []
+    assert sleeps == [7.0]
+    assert len(calls) == 2
+    assert all(call["response_format"] is Delta for call in calls)
+
+
+def test_rate_limit_honors_long_title_case_retry_after(monkeypatch, tmp_path):
+    calls: list[dict] = []
+    sleeps: list[float] = []
+
+    class ProviderRateLimitError(Exception):
+        status_code = 429
+        headers = {"Retry-After": "300"}
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if len(calls) == 1:
+                raise ProviderRateLimitError("rate limited")
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=Delta(changed_files=[])))]
+            )
+
+    monkeypatch.setattr("vibesolve.agents.client.time.sleep", sleeps.append)
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files == []
+    assert sleeps == [300.0]
+    assert len(calls) == 2
+
+
+def test_rate_limit_exhaustion_uses_bounded_exponential_backoff(monkeypatch, tmp_path):
+    calls: list[dict] = []
+    sleeps: list[float] = []
+
+    class ProviderRateLimitError(Exception):
+        status_code = 429
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            raise ProviderRateLimitError("rate limited")
+
+    monkeypatch.setattr("vibesolve.agents.client.time.sleep", sleeps.append)
+    monkeypatch.setattr("vibesolve.agents.client.random.uniform", lambda _low, _high: 0.0)
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    with pytest.raises(ProviderRateLimitError, match="rate limited"):
+        caller.call_typed("fixer", "{}", Delta)
+
+    assert len(calls) == 6
+    assert sleeps == [5.0, 10.0, 20.0, 40.0, 60.0]
+
+
 def test_fixer_delta_retries_an_empty_structured_response(tmp_path):
     calls: list[dict] = []
 

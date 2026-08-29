@@ -11,11 +11,14 @@ as a compatibility alias for any-llm's ``anthropic`` provider.
 """
 
 import json
+import math
+import random
 import re
 import threading
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Callable, Literal, TypeVar, cast
 
@@ -23,6 +26,7 @@ import structlog
 from any_llm.exceptions import (
     ContentFilterFinishReasonError,
     LengthFinishReasonError,
+    RateLimitError,
     UnsupportedParameterError,
 )
 from dotenv import load_dotenv
@@ -40,6 +44,9 @@ _STRUCTURED_OUTPUT_REJECTION_LOCK = threading.Lock()
 _STRUCTURED_OUTPUT_REJECTIONS: set[tuple[str, str, type[Any]]] = set()
 _ResponseFormatRejectionKind = Literal["capability", "request"]
 _MAX_GENERATED_ATTEMPTS = 3
+_MAX_RATE_LIMIT_RETRIES = 5
+_RATE_LIMIT_INITIAL_DELAY_S = 5.0
+_RATE_LIMIT_MAX_DELAY_S = 60.0
 _ANTHROPIC_RESPONSE_TOKENS = 8_192
 _ANTHROPIC_REASONING_TOKENS = {
     "none": 0,
@@ -344,6 +351,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         if model_type is not None:
             use_structured = not _structured_output_was_rejected(provider, model, model_type)
         generated_attempts = 0
+        rate_limit_retries = 0
 
         while generated_attempts < _MAX_GENERATED_ATTEMPTS:
             attempt = generated_attempts + 1
@@ -381,6 +389,25 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                 )
                 continue
             except Exception as exc:
+                if _is_rate_limit_error(exc):
+                    if rate_limit_retries >= _MAX_RATE_LIMIT_RETRIES:
+                        self._log.error(
+                            "agent_rate_limit_exhausted",
+                            agent=agent,
+                            attempts=rate_limit_retries + 1,
+                        )
+                        raise
+                    rate_limit_retries += 1
+                    retry_in_s = _rate_limit_retry_delay(exc, rate_limit_retries)
+                    self._log.warning(
+                        "agent_rate_limited",
+                        agent=agent,
+                        retry=rate_limit_retries,
+                        max_retries=_MAX_RATE_LIMIT_RETRIES,
+                        retry_in_s=round(retry_in_s, 2),
+                    )
+                    time.sleep(retry_in_s)
+                    continue
                 rejection_kind = (
                     _classify_response_format_rejection(exc) if use_structured else None
                 )
@@ -693,6 +720,94 @@ def _classify_response_format_rejection(
                 pending.append(nested)
 
     return "request" if request_specific_rejection else None
+
+
+def _exception_chain(exc: Exception) -> list[Exception]:
+    """Return an exception and its provider/wrapper causes without duplicates."""
+    pending = [exc]
+    chain: list[Exception] = []
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        chain.append(current)
+        for name in ("original_exception", "__cause__", "__context__"):
+            nested = getattr(current, name, None)
+            if isinstance(nested, Exception):
+                pending.append(nested)
+    return chain
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Recognize unified and provider-native HTTP 429 exceptions."""
+    for current in _exception_chain(exc):
+        if isinstance(current, RateLimitError):
+            return True
+        for source in (
+            current,
+            getattr(current, "response", None),
+            getattr(current, "raw_response", None),
+        ):
+            if getattr(source, "status_code", None) == 429:
+                return True
+    return False
+
+
+def _parse_retry_after(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        seconds = float(value)
+    elif isinstance(value, str):
+        try:
+            seconds = float(value)
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(value)
+            except (TypeError, ValueError):
+                return None
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            seconds = (retry_at - datetime.now(timezone.utc)).total_seconds()
+    else:
+        return None
+
+    if not math.isfinite(seconds):
+        return None
+    return max(0.0, seconds)
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Read Retry-After from any-llm or a provider SDK exception."""
+    for current in _exception_chain(exc):
+        direct = _parse_retry_after(getattr(current, "retry_after", None))
+        if direct is not None:
+            return direct
+        for source in (
+            current,
+            getattr(current, "response", None),
+            getattr(current, "raw_response", None),
+        ):
+            headers = getattr(source, "headers", None)
+            get_header = getattr(headers, "get", None)
+            if not callable(get_header):
+                continue
+            for header_name in ("retry-after", "Retry-After"):
+                parsed = _parse_retry_after(get_header(header_name))
+                if parsed is not None:
+                    return parsed
+    return None
+
+
+def _rate_limit_retry_delay(exc: Exception, retry: int) -> float:
+    retry_after = _retry_after_seconds(exc)
+    if retry_after is not None:
+        return retry_after
+    base_delay = min(
+        _RATE_LIMIT_INITIAL_DELAY_S * (2 ** (retry - 1)),
+        _RATE_LIMIT_MAX_DELAY_S,
+    )
+    return min(base_delay + random.uniform(0.0, 1.0), _RATE_LIMIT_MAX_DELAY_S)
 
 
 # ---------------------------------------------------------------------------
