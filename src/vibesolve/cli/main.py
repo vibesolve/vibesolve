@@ -8,8 +8,15 @@ Exposes a single `vibesolve` command with subcommands:
 Registered as `vibesolve` in pyproject.toml.
 """
 
+import os
+import sys
+
 import typer
 
+from vibesolve.agents.provider_bootstrap import (
+    ProviderEnvironmentChanged,
+    mark_provider_restart,
+)
 from vibesolve.cli.run_single import run as _run
 from vibesolve.cli.run_batch import run as _batch
 
@@ -22,5 +29,25 @@ app.command("run", help="Run the generation pipeline for a single problem.")(_ru
 app.command("batch", help="Run the pipeline in parallel across multiple problem files.")(_batch)
 
 
+def _restart_cli(change: ProviderEnvironmentChanged) -> None:
+    """Restart once so newly installed provider dependencies load consistently."""
+    mark_provider_restart(change)
+    typer.echo(
+        f"Provider '{change.provider}' dependencies installed; restarting VibeSolve...",
+        err=True,
+    )
+    os.execv(
+        sys.executable,
+        [sys.executable, "-m", "vibesolve.cli.main", *sys.argv[1:]],
+    )
+
+
+def main() -> None:
+    try:
+        app()
+    except ProviderEnvironmentChanged as change:
+        _restart_cli(change)
+
+
 if __name__ == "__main__":
-    app()
+    main()

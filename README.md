@@ -31,6 +31,13 @@ cp .env.example .env.local
 
 With the environment activated, `vibesolve` is on your `PATH` — no prefix needed. Activation lasts for the shell session; in a fresh shell either re-run `source .venv/bin/activate` or prefix a one-off command with `uv run` (e.g. `uv run vibesolve run`).
 
+When a selected any-llm provider needs an optional SDK, VibeSolve installs that
+provider extra into the active environment on first use. For example,
+`--provider cohere` installs the version-matched `any-llm-sdk[cohere]` extra;
+other optional provider extras are not installed. Transitive versions come from
+the same `uv.lock` used by VibeSolve. VibeSolve then restarts the command once
+so every dependency is loaded from the updated environment.
+
 ## Usage
 
 Start Docker on your machine: Linux run `sudo systemctl start docker`, macOS or Windows launch Docker Desktop.
@@ -81,7 +88,7 @@ Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTIN
 
 ## Configuration
 
-Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); use any installed any-llm provider name with `--provider`, with `claude` kept as an alias for `anthropic`. Per-agent model IDs and reasoning efforts are configured under `provider_models.<provider>.<agent>`; custom providers must define `_default.model` or explicitly configure every agent, and per-agent entries override `_default` field by field. The `auto` effort omits the reasoning parameter and lets the provider/model choose; explicit efforts are preserved across retries.
+Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`. Provider calls are routed through [any-llm](https://github.com/mozilla-ai/any-llm); use any supported any-llm provider name with `--provider`, with `claude` kept as an alias for `anthropic`. Missing optional provider SDKs are installed on demand from any-llm's own advertised extras. Per-agent model IDs and reasoning efforts are configured under `provider_models.<provider>.<agent>`; custom providers must define `_default.model` or explicitly configure every agent, and per-agent entries override `_default` field by field. The `auto` effort omits the reasoning parameter and lets the provider/model choose; explicit efforts are preserved across retries.
 
 ## Prerequisites
 

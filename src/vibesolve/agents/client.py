@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from json_repair import repair_json
 
 from vibesolve.agents.prompts import load_prompt
+from vibesolve.agents.provider_bootstrap import ensure_provider_dependencies
 from vibesolve.config.settings import AgentModelConfig, AppSettings
 
 T = TypeVar("T")
@@ -450,7 +451,7 @@ def make_caller_factory(settings: AppSettings) -> Callable:
     Return a ``(log_dir, log) -> BaseAgentCaller`` factory for the configured provider.
 
     Each caller owns its any-llm provider client. Batch workers invoke this
-    factory once per problem, so provider clients are never shared across
+    factory once per problem, so async SDK clients are never shared across
     worker threads.
     """
     any_llm_provider = _any_llm_provider(settings.provider)
@@ -459,6 +460,10 @@ def make_caller_factory(settings: AppSettings) -> Callable:
     # credential schema. Export .env.local without overriding the real process
     # environment, then let any-llm resolve the selected provider's credentials.
     load_dotenv(".env.local", override=False)
+
+    # Do this before batch workers start. If installation changes the active
+    # environment, the CLI restarts before constructing any provider clients.
+    ensure_provider_dependencies(any_llm_provider)
 
     from any_llm import AnyLLM
 
@@ -470,7 +475,6 @@ def make_caller_factory(settings: AppSettings) -> Callable:
 
 
 def _looks_like_response_format_rejection(exc: Exception) -> bool:
-    """Return whether an exception specifically rejects structured output."""
     format_markers = (
         "response_format",
         "response format",

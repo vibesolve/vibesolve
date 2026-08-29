@@ -28,18 +28,24 @@ docker build -t timefold-validator docker/   # pre-bakes Maven deps into the val
 
 Python 3.11+ is required (modern type annotations). Every command in this file assumes the venv is activated; without activation, prefix with `uv run` (e.g. `uv run pytest`). If uv cannot find a suitable Python, install one with `uv python install 3.13`.
 
-Provider calls go through any-llm. Pass any installed any-llm provider name with
+Provider calls go through any-llm. Pass any supported any-llm provider name with
 `--provider` (for example `openai`, `anthropic`, `bedrock`); the legacy
 `claude` value is kept as an alias for `anthropic`. Credentials come from
 provider-specific environment variables or credential chains, or from the
 generic `API_KEY` setting where the provider accepts a single API key.
+Optional provider SDKs are installed on first use from any-llm's advertised
+extras. A non-default `provider-lock` dependency group resolves all provider
+extras into the single `uv.lock`; runtime installation exports constraints from
+that packaged lock and installs only the selected provider. The CLI then
+restarts itself once so it never runs the pipeline with mixed dependency
+versions in memory.
 
 Make sure the Docker daemon is running before the `docker build` (Linux:
 `sudo systemctl start docker`; macOS/Windows: launch Docker Desktop).
 
 ## CLI
 
-There is a single `vibesolve` command (defined in `pyproject.toml [project.scripts]` as `vibesolve.cli.main:app`) with two subcommands. Run them from the repo root.
+There is a single `vibesolve` command (defined in `pyproject.toml [project.scripts]` as `vibesolve.cli.main:main`) with two subcommands. Run them from the repo root.
 
 | Command | Purpose | Source |
 |---|---|---|

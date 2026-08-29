@@ -13,6 +13,14 @@ from vibesolve.config.settings import AppSettings
 from vibesolve.models.domain import Delta, FileEntry
 
 
+@pytest.fixture(autouse=True)
+def _provider_dependencies_are_available(monkeypatch):
+    monkeypatch.setattr(
+        "vibesolve.agents.client.ensure_provider_dependencies",
+        lambda _provider: None,
+    )
+
+
 def _caller(tmp_path, client, settings: AppSettings) -> AnyLLMAgentCaller:
     return AnyLLMAgentCaller(
         client=client,
@@ -50,6 +58,47 @@ def test_make_caller_factory_maps_claude_to_any_llm_anthropic(monkeypatch, tmp_p
     assert isinstance(caller, AnyLLMAgentCaller)
 
 
+def test_make_caller_factory_passes_any_llm_provider_names_through(monkeypatch, tmp_path):
+    created: list[tuple[str, str | None]] = []
+
+    class FakeAnyLLM:
+        @classmethod
+        def create(cls, provider: str, *, api_key: str | None):
+            created.append((provider, api_key))
+            return SimpleNamespace()
+
+    monkeypatch.setitem(sys.modules, "any_llm", SimpleNamespace(AnyLLM=FakeAnyLLM))
+
+    settings = AppSettings(provider="bedrock")
+    factory = make_caller_factory(settings)
+    caller = factory(tmp_path, structlog.get_logger())
+
+    assert created == [("bedrock", None)]
+    assert isinstance(caller, AnyLLMAgentCaller)
+
+
+def test_make_caller_factory_preflights_provider_before_creating_clients(monkeypatch, tmp_path):
+    events: list[str] = []
+
+    class FakeAnyLLM:
+        @classmethod
+        def create(cls, provider: str, *, api_key: str | None):
+            events.append(f"create:{provider}")
+            return SimpleNamespace()
+
+    monkeypatch.setitem(sys.modules, "any_llm", SimpleNamespace(AnyLLM=FakeAnyLLM))
+    monkeypatch.setattr(
+        "vibesolve.agents.client.ensure_provider_dependencies",
+        lambda provider: events.append(f"preflight:{provider}"),
+    )
+
+    factory = make_caller_factory(AppSettings(provider="bedrock"))
+
+    assert events == ["preflight:bedrock"]
+    factory(tmp_path, structlog.get_logger())
+    assert events == ["preflight:bedrock", "create:bedrock"]
+
+
 def test_make_caller_factory_creates_an_independent_client_per_problem(monkeypatch, tmp_path):
     clients: list[object] = []
 
@@ -70,24 +119,6 @@ def test_make_caller_factory_creates_an_independent_client_per_problem(monkeypat
     assert first._client is clients[0]
     assert second._client is clients[1]
     assert first._client is not second._client
-
-
-def test_make_caller_factory_passes_any_llm_provider_names_through(monkeypatch, tmp_path):
-    created: list[tuple[str, str | None]] = []
-
-    class FakeAnyLLM:
-        @classmethod
-        def create(cls, provider: str, *, api_key: str | None):
-            created.append((provider, api_key))
-            return SimpleNamespace()
-
-    monkeypatch.setitem(sys.modules, "any_llm", SimpleNamespace(AnyLLM=FakeAnyLLM))
-
-    settings = AppSettings(provider="bedrock", provider_models=_bedrock_provider_models())
-    caller = make_caller_factory(settings)(tmp_path, structlog.get_logger())
-
-    assert created == [("bedrock", None)]
-    assert isinstance(caller, AnyLLMAgentCaller)
 
 
 def test_make_caller_factory_uses_generic_api_key_override(monkeypatch, tmp_path):
