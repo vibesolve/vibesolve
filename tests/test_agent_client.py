@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from vibesolve.agents import client as agent_client
 from vibesolve.agents.client import AnyLLMAgentCaller, BaseAgentCaller, make_caller_factory
 from vibesolve.config.settings import AppSettings
-from vibesolve.models.domain import Delta, FileEntry, ProblemSpec
+from vibesolve.models.domain import Delta, FileEntry, FixerDelta, ProblemSpec
 
 
 @pytest.fixture(autouse=True)
@@ -299,6 +299,44 @@ def test_auto_effort_omits_reasoning_parameter(tmp_path):
 
     assert delta.changed_files == []
     assert "reasoning_effort" not in calls[0]
+
+
+def test_fixer_delta_retries_an_empty_structured_response(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(message=SimpleNamespace(parsed=Delta(changed_files=[])))
+                    ]
+                )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=(
+                                '{"changed_files":['
+                                '{"path":"src/A.java","content":"fixed"}'
+                                '],"deleted_files":[]}'
+                            )
+                        )
+                    )
+                ]
+            )
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", FixerDelta)
+
+    assert delta.changed_files[0].content == "fixed"
+    assert len(calls) == 2
+    assert calls[0]["response_format"] is FixerDelta
+    assert "response_format" not in calls[1]
+    assert '"deleted_files"' in calls[1]["messages"][0]["content"]
 
 
 def test_problem_spec_requests_native_structured_output(tmp_path):

@@ -67,7 +67,7 @@ class ProjectManifest(BaseModel):
 class Delta(BaseModel):
     """Partial manifest update returned by every agent except the Parser."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     project_name: str | None = Field(None, alias="projectName")
     base_package: str | None = Field(None, alias="basePackage")
@@ -79,6 +79,56 @@ class Delta(BaseModel):
     @classmethod
     def _reject_unsafe_project_name(cls, value: str | None) -> str | None:
         return None if value is None else _validate_project_name(value)
+
+
+class GenerationDelta(Delta):
+    """A generation stage must contribute at least one project file."""
+
+    changed_files: list[FileEntry]
+
+    @model_validator(mode="after")
+    def _require_changed_file(self) -> "GenerationDelta":
+        if not self.changed_files:
+            raise ValueError("generation stage must include at least one changed file")
+        return self
+
+
+class ModelBuilderDelta(GenerationDelta):
+    """The first generation stage must establish project identity."""
+
+    project_name: str = Field(alias="projectName")
+    base_package: str = Field(alias="basePackage")
+
+    @field_validator("project_name", "base_package")
+    @classmethod
+    def _require_nonempty_project_metadata(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("model builder project metadata must not be empty")
+        return value
+
+
+class ReviewerDelta(Delta):
+    """Reviewer output always states its changed files, even for a no-op."""
+
+    changed_files: list[FileEntry]
+
+
+class FixerDelta(Delta):
+    """A fixer response must contain at least one concrete file operation.
+
+    Other agents may legitimately return an empty Delta when they have nothing
+    to add. The fixer is only called after validation has failed, so accepting
+    an empty response would cause the unchanged project to be validated again.
+    """
+
+    changed_files: list[FileEntry]
+    deleted_files: list[str]
+
+    @model_validator(mode="after")
+    def _require_file_operation(self) -> "FixerDelta":
+        if not self.changed_files and not self.deleted_files:
+            raise ValueError("fixer must include at least one changed or deleted file")
+        return self
 
 
 class ProblemSpec(BaseModel):
