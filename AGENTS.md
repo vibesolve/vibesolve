@@ -59,7 +59,7 @@ Flags shared by both subcommands:
 
 `run` only:
 
-- `--reasoning-effort none|low|medium|high` — overrides every agent's effort at once (per-agent defaults live beside model names in `provider_models:`; see below)
+- `--reasoning-effort auto|none|low|medium|high` — overrides every agent's effort at once (`auto` omits the reasoning parameter; per-agent settings live beside model names in `provider_models:`; see below)
 - `--user-validate` — pause after parsing to let the user review/correct the `ProblemSpec` interactively before code generation
 
 `batch` only:
@@ -155,7 +155,7 @@ its leading underscore means a triple: `PROVIDER_MODELS__DEEPSEEK___DEFAULT__MOD
 - **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
 - **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add the agent to `config/settings.py:AgentModels` and each default `provider_models` entry with `model` and `effort`, and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
-- **Per-agent reasoning effort** → `provider_models.<provider>.<agent>.effort` in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none), or set a whole block at once with `provider_models.<provider>._default.effort`. Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
+- **Per-agent reasoning effort** → `provider_models.<provider>.<agent>.effort` in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else none), or set a whole block at once with `provider_models.<provider>._default.effort`. `auto` omits the reasoning parameter; explicit values are preserved across retries. Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
 
 `BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
 through any-llm's unified completion API. `provider` is passed through to

@@ -92,14 +92,14 @@ def _extract_and_repair(text: str) -> str:
     return repair_json(text)
 
 
-def _reasoning_effort(effort: str) -> str:
-    """Preserve explicit effort values when passing them through any-llm.
+def _reasoning_effort(effort: str) -> str | None:
+    """Map our effort setting to any-llm's ``reasoning_effort`` parameter.
 
-    any-llm drops Python ``None``, which lets the provider choose its default.
-    Passing the literal ``"none"`` ensures providers do not silently enable
-    reasoning when the user explicitly disabled it.
+    ``auto`` deliberately omits the parameter so the provider/model chooses its
+    native default. Explicit values, including the string ``"none"``, are kept
+    intact so retries never change the behavior the user requested.
     """
-    return effort
+    return None if effort == "auto" else effort
 
 
 def _raw_json_response_format() -> dict[str, Any]:
@@ -399,14 +399,16 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                 {"role": "system", "content": load_prompt(agent)},
                 {"role": "user", "content": user_message},
             ],
-            "reasoning_effort": _reasoning_effort(effort),
         }
+        reasoning_effort = _reasoning_effort(effort)
+        if reasoning_effort is not None:
+            api_params["reasoning_effort"] = reasoning_effort
         if _any_llm_provider(self._settings.provider) == "anthropic":
             # Anthropic counts thinking and response tokens against max_tokens.
             # Preserve the capacity used before the any-llm migration, and set
             # an explicit timeout so its SDK accepts the high-effort ceiling.
             api_params["max_tokens"] = (
-                _ANTHROPIC_RESPONSE_TOKENS + _ANTHROPIC_REASONING_TOKENS[effort]
+                _ANTHROPIC_RESPONSE_TOKENS + _ANTHROPIC_REASONING_TOKENS.get(effort, 0)
             )
             api_params["timeout"] = _ANTHROPIC_TIMEOUT_S
         if model_type is not None:

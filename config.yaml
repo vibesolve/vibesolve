@@ -16,8 +16,9 @@ provider: openai
 
 # Per-provider model and reasoning-effort overrides. Provider names are any-llm
 # names after compatibility aliases are applied (`claude` -> `anthropic`).
-# Allowed effort values per agent: none | low | medium | high. Override every
-# agent at once from the CLI with --reasoning-effort.
+# Allowed effort values per agent: auto | none | low | medium | high. `auto`
+# omits the reasoning parameter so the provider/model chooses.
+# Override every agent at once from the CLI with --reasoning-effort.
 # An optional `_default` key in a provider block sets the model and/or effort for
 # every agent at once; per-agent entries override it. Precedence: per-agent value
 # > _default > built-in default.

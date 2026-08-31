@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_va
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-EffortLevel = Literal["none", "low", "medium", "high"]
+EffortLevel = Literal["auto", "none", "low", "medium", "high"]
 
 _DEFAULT_AGENT_EFFORTS: dict[str, EffortLevel] = {
     "parser": "none",

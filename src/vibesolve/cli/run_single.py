@@ -19,12 +19,12 @@ from vibesolve.utils import configure_logging
 
 app = typer.Typer(help="Run the Timefold generation pipeline for a single problem.")
 
-_REASONING_EFFORTS = {"none", "low", "medium", "high"}
+_REASONING_EFFORTS = {"auto", "none", "low", "medium", "high"}
 
 
 def _with_reasoning_effort(settings: AppSettings, effort: str) -> AppSettings:
     if effort not in _REASONING_EFFORTS:
-        raise typer.BadParameter("reasoning effort must be one of: none, low, medium, high")
+        raise typer.BadParameter("reasoning effort must be one of: auto, none, low, medium, high")
     return settings.model_copy(
         update={
             "provider_models": {
@@ -51,7 +51,7 @@ def run(
     ] = None,
     reasoning_effort: Annotated[
         Optional[str],
-        typer.Option("--reasoning-effort", help="Override reasoning effort for ALL agents: none|low|medium|high. Omit to use per-agent config."),
+        typer.Option("--reasoning-effort", help="Override reasoning effort for ALL agents: auto|none|low|medium|high. Omit to use per-agent config."),
     ] = None,
     provider: Annotated[
         Optional[str],

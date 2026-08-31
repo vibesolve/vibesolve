@@ -200,6 +200,28 @@ def test_openai_typed_call_requests_schema_and_parses_result(tmp_path):
     assert calls[0]["response_format"] is Delta
 
 
+def test_auto_effort_omits_reasoning_parameter(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=Delta(changed_files=[])))]
+            )
+
+    settings = AppSettings(
+        provider="bedrock",
+        provider_models=_bedrock_provider_models(fixer_effort="auto"),
+    )
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files == []
+    assert "reasoning_effort" not in calls[0]
+
+
 def test_claude_default_none_effort_disables_reasoning_through_any_llm(tmp_path):
     calls: list[dict] = []
 

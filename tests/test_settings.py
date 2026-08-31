@@ -31,6 +31,9 @@ def test_builtin_defaults(monkeypatch):
     assert settings.provider_models["openai"].fixer.effort == "high"
     assert settings.provider_models["anthropic"].user_validator_explain.model == "claude-haiku-4-5-20251001"
     assert settings.provider_models["anthropic"].user_validator_update.model == "claude-haiku-4-5-20251001"
+    assert settings.provider_models["anthropic"].parser.effort == "none"
+    assert settings.provider_models["anthropic"].reviewer.effort == "medium"
+    assert settings.provider_models["anthropic"].fixer.effort == "high"
 
 
 def test_yaml_overrides_defaults(tmp_path, monkeypatch):

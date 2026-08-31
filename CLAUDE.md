@@ -134,7 +134,8 @@ default_workers: 3
 # any-llm provider name. `claude` aliases to `anthropic`.
 provider: openai
 
-# Per-agent model and reasoning effort (none | low | medium | high).
+# Per-agent model and reasoning effort (auto | none | low | medium | high).
+# auto omits the reasoning parameter and lets the provider/model choose.
 # --reasoning-effort overrides every agent's effort at once.
 #
 # An optional `_default` key sets the model and/or effort for every agent in a

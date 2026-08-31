@@ -54,7 +54,7 @@ For shell tab-completion, run `vibesolve --install-completion` once (edits your 
 
 CLI flags override `config.yaml` and environment variables. Run `vibesolve run --help` / `vibesolve batch --help` to see this same list.
 Configure per-agent model IDs and reasoning efforts in `config.yaml` under `provider_models.<provider>.<agent>`, or override one with an environment variable such as `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`. A provider block's optional `_default` key sets the model and/or effort for all its agents at once (per-agent value > `_default` > built-in default).
-Providers without a bundled profile must set `_default.model` or explicitly configure a model for every agent.
+Providers without a bundled profile must set `_default.model` or explicitly configure a model for every agent. The optional `auto` effort leaves the reasoning parameter unset.
 
 ### `vibesolve run [FILE]`
 
@@ -66,7 +66,7 @@ Providers without a bundled profile must set `_default.model` or explicitly conf
 | `--user-validate` | off | Pause after parsing to review and correct the spec before code generation. |
 | `--config PATH` | `config.yaml` if present | YAML config file. |
 | `--provider PROVIDER` | `openai` | any-llm provider name, for example `openai`, `anthropic`, or `bedrock`; `claude` aliases to `anthropic`. |
-| `--reasoning-effort none\|low\|medium\|high` | per-agent config | Override reasoning effort for all agents at once. |
+| `--reasoning-effort auto\|none\|low\|medium\|high` | per-agent config | Override reasoning effort for all agents at once. |
 | `--max-iterations N` | `max_fix_iterations` (10) | Max fixer agent iterations. |
 | `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |
 
