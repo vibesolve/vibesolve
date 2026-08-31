@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from vibesolve.models.domain import ProjectManifest, FileEntry
-from vibesolve.pipeline.runner import _write_manifest
+from vibesolve.pipeline.runner import _project_output_dir, _write_manifest
 from vibesolve.validation.docker_validator import DockerValidator
 
 
@@ -39,6 +39,17 @@ def test_fileentry_accepts_normal_nested_path():
     # guard against false positives on legitimate generated paths
     fe = FileEntry(path="src/main/java/com/example/Foo.java", content="x")
     assert fe.path.endswith("Foo.java")
+
+
+def test_project_output_dir_rejects_names_that_bypassed_validation(tmp_path):
+    with pytest.raises(ValueError, match="unsafe project name"):
+        _project_output_dir(tmp_path, "../escaped-project")
+    with pytest.raises(ValueError, match="unsafe project name"):
+        _project_output_dir(tmp_path, str(tmp_path / "absolute-project"))
+
+
+def test_project_output_dir_accepts_direct_child(tmp_path):
+    assert _project_output_dir(tmp_path, "safe-project") == tmp_path / "safe-project"
 
 
 def test_write_manifest_contains_relative_path_that_bypassed_validation(tmp_path):

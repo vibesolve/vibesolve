@@ -61,7 +61,7 @@ def test_serve_zip_contains_docker_artifacts(tmp_path):
     assert any(n.endswith("Dockerfile") for n in names), f"zip missing Dockerfile: {names}"
 
 
-def test_empty_project_name_is_rejected(tmp_path):
+def test_empty_project_name_is_rejected_before_output(tmp_path):
     results_dir = tmp_path / "res"
     res = run_problem(
         input_file=_input(tmp_path),
