@@ -16,7 +16,12 @@ from any_llm.exceptions import (
 from pydantic import ValidationError
 
 from vibesolve.agents import client as agent_client
-from vibesolve.agents.client import AnyLLMAgentCaller, BaseAgentCaller, make_caller_factory
+from vibesolve.agents.client import (
+    AnyLLMAgentCaller,
+    BaseAgentCaller,
+    EmptyAgentResponseError,
+    make_caller_factory,
+)
 from vibesolve.config.settings import AppSettings
 from vibesolve.models.domain import Delta, FileEntry, FixerDelta, ProblemSpec
 
@@ -380,6 +385,106 @@ def test_rate_limit_exhaustion_uses_bounded_exponential_backoff(monkeypatch, tmp
 
     assert len(calls) == 6
     assert sleeps == [5.0, 10.0, 20.0, 40.0, 60.0]
+
+
+def test_empty_response_retries_with_same_explicit_effort_and_output_mode(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            finish_reason="stop",
+                            message=SimpleNamespace(content=""),
+                        )
+                    ],
+                    usage=SimpleNamespace(
+                        completion_tokens=12,
+                        completion_tokens_details=SimpleNamespace(reasoning_tokens=12),
+                    ),
+                )
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=Delta(changed_files=[])))]
+            )
+
+    settings = AppSettings(
+        provider="bedrock",
+        provider_models=_bedrock_provider_models(),
+    )
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    assert caller.call_typed("fixer", "{}", Delta).changed_files == []
+    assert len(calls) == 2
+    assert all(call["reasoning_effort"] == "high" for call in calls)
+    assert all(call["response_format"] is Delta for call in calls)
+    response_files = sorted(tmp_path.glob("fixer-response_*.txt"))
+    assert [path.name for path in response_files] == [
+        "fixer-response_0001.txt",
+        "fixer-response_0002.txt",
+    ]
+    assert response_files[0].read_text(encoding="utf-8") == ""
+    assert response_files[1].read_text(encoding="utf-8")
+
+
+def test_empty_response_in_auto_mode_retries_without_adding_effort(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=""))]
+                )
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=Delta(changed_files=[])))]
+            )
+
+    settings = AppSettings(
+        provider="bedrock",
+        provider_models=_bedrock_provider_models(fixer_effort="auto"),
+    )
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    assert caller.call_typed("fixer", "{}", Delta).changed_files == []
+    assert len(calls) == 2
+    assert all("reasoning_effort" not in call for call in calls)
+    assert all(call["response_format"] is Delta for call in calls)
+
+
+def test_persistent_empty_response_is_bounded_and_descriptive(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="stop",
+                        message=SimpleNamespace(content=""),
+                    )
+                ]
+            )
+
+    settings = AppSettings(
+        provider="bedrock",
+        provider_models=_bedrock_provider_models(fixer_effort="auto"),
+    )
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    with pytest.raises(
+        EmptyAgentResponseError,
+        match=r"provider 'bedrock'.*model 'amazon.nova-pro-v1:0'.*effort 'auto'",
+    ):
+        caller.call_typed("fixer", "{}", Delta)
+
+    assert len(calls) == 3
+    assert all("reasoning_effort" not in call for call in calls)
+    assert all(call["response_format"] is Delta for call in calls)
 
 
 def test_fixer_delta_retries_an_empty_structured_response(tmp_path):

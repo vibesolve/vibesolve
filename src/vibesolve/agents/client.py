@@ -57,6 +57,10 @@ _ANTHROPIC_REASONING_TOKENS = {
 _ANTHROPIC_TIMEOUT_S = 900.0
 
 
+class EmptyAgentResponseError(ValueError):
+    """The provider returned no usable text for an agent response."""
+
+
 def _any_llm_provider(provider: str) -> str:
     normalized = provider.strip().lower()
     return _PROVIDER_ALIASES.get(normalized, normalized)
@@ -203,6 +207,9 @@ def _message_to_text(message: Any) -> str | None:
 
 def _response_text(resp: Any) -> str:
     """Best-effort text extraction across any-llm response wrappers."""
+    if isinstance(resp, str):
+        return resp
+
     parsed = _first_attr(resp, "output_parsed", "parsed_output")
     if parsed is not None:
         return _serialize_parsed(parsed)
@@ -227,7 +234,7 @@ def _response_text(resp: Any) -> str:
         if text is not None:
             return str(text)
 
-    return str(resp)
+    return ""
 
 
 def _raise_for_terminal_response(agent: str, resp: Any) -> None:
@@ -327,6 +334,7 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         self._log = log
         self.agent_times: dict[str, float] = {}
         self.agent_tokens: dict[str, dict] = {}
+        self._response_sequence: int = 0
 
     def call(self, agent: str, user_message: str) -> str:
         """Call an agent and return its JSON response string."""
@@ -365,6 +373,19 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                     model=model,
                     effort=effort,
                 )
+            except EmptyAgentResponseError as exc:
+                generated_attempts += 1
+                last_exc = exc
+                self._log.warning(
+                    "agent_response_empty",
+                    agent=agent,
+                    model=model,
+                    effort=effort,
+                    attempt=attempt,
+                    max_attempts=_MAX_GENERATED_ATTEMPTS,
+                    error=str(exc),
+                )
+                continue
             except ValidationError as exc:
                 if not use_structured:
                     raise
@@ -499,12 +520,35 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         self._record_usage(agent, model, resp)
 
         _raise_for_terminal_response(agent, resp)
-        content = _extract_and_repair(_response_text(resp))
+        response_text = _response_text(resp)
+        content = _extract_and_repair(response_text)
 
         self._log.info("agent_response", agent=agent, chars=len(content), elapsed_s=round(elapsed, 2))
 
-        ts_tag = datetime.now().strftime("%H%M%S")
-        (self._log_dir / f"{agent}-response_{ts_tag}.txt").write_text(content, encoding="utf-8")
+        self._response_sequence += 1
+        response_id = f"{self._response_sequence:04d}"
+        (self._log_dir / f"{agent}-response_{response_id}.txt").write_text(
+            content,
+            encoding="utf-8",
+        )
+
+        if not response_text.strip():
+            choices = _first_attr(resp, "choices") or []
+            finish_reason = _first_attr(choices[0], "finish_reason") if choices else None
+            usage = _first_attr(resp, "usage")
+            output_tokens = _usage_count(usage, "output_tokens", "completion_tokens")
+            output_details = _first_attr(
+                usage,
+                "output_tokens_details",
+                "completion_tokens_details",
+            )
+            reasoning_tokens = _usage_count(output_details, "reasoning_tokens")
+            raise EmptyAgentResponseError(
+                f"Agent {agent!r} received an empty response from provider "
+                f"{_any_llm_provider(self._settings.provider)!r}, model {model!r}, "
+                f"effort {effort!r} (finish_reason={finish_reason!r}, "
+                f"output_tokens={output_tokens}, reasoning_tokens={reasoning_tokens})"
+            )
 
         return content
 
