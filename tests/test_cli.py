@@ -89,3 +89,9 @@ def test_cli_restart_preserves_arguments_and_marks_attempt(monkeypatch):
             ],
         )
     ]
+
+
+def test_batch_rejects_zero_workers_before_api_setup():
+    result = runner.invoke(app, ["batch", "--workers", "0"])
+    assert result.exit_code == 1
+    assert "--workers must be at least 1" in result.output
