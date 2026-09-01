@@ -7,10 +7,24 @@ from types import SimpleNamespace
 
 import pytest
 import structlog
+from any_llm.exceptions import (
+    ContentFilterFinishReasonError,
+    InvalidRequestError,
+    LengthFinishReasonError,
+    UnsupportedParameterError,
+)
+from pydantic import ValidationError
 
-from vibesolve.agents.client import AnyLLMAgentCaller, make_caller_factory
+from vibesolve.agents import client as agent_client
+from vibesolve.agents.client import AnyLLMAgentCaller, BaseAgentCaller, make_caller_factory
 from vibesolve.config.settings import AppSettings
-from vibesolve.models.domain import Delta, FileEntry
+from vibesolve.models.domain import Delta, FileEntry, ProblemSpec
+
+
+@pytest.fixture(autouse=True)
+def _clear_structured_output_rejections():
+    with agent_client._STRUCTURED_OUTPUT_REJECTION_LOCK:
+        agent_client._STRUCTURED_OUTPUT_REJECTIONS.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -30,13 +44,46 @@ def _caller(tmp_path, client, settings: AppSettings) -> AnyLLMAgentCaller:
     )
 
 
-def _bedrock_provider_models(fixer_effort: str = "high") -> dict[str, dict]:
+def _invalid_delta_error() -> ValidationError:
+    try:
+        Delta.model_validate_json("not JSON")
+    except ValidationError as exc:
+        return exc
+    raise AssertionError("invalid JSON unexpectedly validated")
+
+
+def _problem_spec(problem_type: str = "scheduling") -> ProblemSpec:
+    return ProblemSpec(
+        problemType=problem_type,
+        entities=["shift"],
+        decisions=["assign an employee to each shift"],
+        constraints=["Every shift must be assigned"],
+        objectives=["Prefer balanced workloads"],
+        dataRequirements=["employee availability"],
+        assumptions=[],
+        domainContext=["A shift is one staffed work period"],
+    )
+
+
+def _bedrock_provider_models(fixer_effort: str = "high") -> dict[str, dict[str, dict[str, str]]]:
     return {
         "bedrock": {
             "_default": {"model": "amazon.nova-lite-v1:0", "effort": "none"},
             "fixer": {"model": "amazon.nova-pro-v1:0", "effort": fixer_effort},
         }
     }
+
+
+def test_base_caller_retains_typed_retry_for_call_only_subclasses():
+    responses = iter(["not JSON", '{"changed_files":[]}'])
+
+    class CallOnlyCaller(BaseAgentCaller):
+        def call(self, _agent: str, _user_message: str) -> str:
+            return next(responses)
+
+    delta = CallOnlyCaller().call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files == []
 
 
 def test_make_caller_factory_maps_claude_to_any_llm_anthropic(monkeypatch, tmp_path):
@@ -200,7 +247,8 @@ def test_openai_raw_call_returns_json_and_tracks_tokens(tmp_path):
     raw = caller.call("parser", "make a schedule")
 
     assert json.loads(raw) == {"problemType": "test"}
-    assert calls[0]["response_format"]["type"] == "json_schema"
+    assert "response_format" not in calls[0]
+    # Explicit none remains a string so any-llm does not drop it.
     assert calls[0]["reasoning_effort"] == "none"
     assert "max_tokens" not in calls[0]
     assert "timeout" not in calls[0]
@@ -251,6 +299,31 @@ def test_auto_effort_omits_reasoning_parameter(tmp_path):
 
     assert delta.changed_files == []
     assert "reasoning_effort" not in calls[0]
+
+
+def test_problem_spec_requests_native_structured_output(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            assert params["response_format"] is ProblemSpec
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(parsed=_problem_spec())
+                    )
+                ]
+            )
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    spec = caller.call_typed("parser", "schedule nurses", ProblemSpec)
+
+    assert spec.problem_type == "scheduling"
+    assert spec.domain_context == ["A shift is one staffed work period"]
+    assert len(calls) == 1
 
 
 def test_claude_default_none_effort_disables_reasoning_through_any_llm(tmp_path):
@@ -338,9 +411,11 @@ def test_claude_typed_call_falls_back_when_structured_is_rejected(tmp_path):
     class FakeClient:
         def completion(self, **params):
             calls.append(params)
-            if params["response_format"] is Delta:
+            if params.get("response_format") is Delta:
                 raise TypeError("response_format is not supported")
-            assert params["response_format"]["type"] == "json_schema"
+            assert "response_format" not in params
+            assert '"changed_files"' in params["messages"][0]["content"]
+            assert '"projectName"' in params["messages"][0]["content"]
             return SimpleNamespace(
                 choices=[
                     SimpleNamespace(
@@ -371,25 +446,46 @@ def test_claude_typed_call_falls_back_when_structured_is_rejected(tmp_path):
     }
 
 
-@pytest.mark.parametrize(
-    "message",
-    ["upstream connection reset", "structured output service timed out"],
-)
-def test_typed_call_reraises_non_format_errors_without_downgrading(tmp_path, message):
+def test_structured_output_rejection_is_reused_across_callers(tmp_path):
     calls: list[dict] = []
 
     class FakeClient:
         def completion(self, **params):
             calls.append(params)
-            raise RuntimeError(message)
+            if params.get("response_format") is Delta:
+                raise UnsupportedParameterError("response_format", "cohere")
+            if params.get("response_format") is ProblemSpec:
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(parsed=_problem_spec()))]
+                )
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"changed_files":[]}'))]
+            )
 
-    settings = AppSettings(provider="openai")
-    caller = _caller(tmp_path, FakeClient(), settings)
+    settings = AppSettings(
+        provider="cohere",
+        provider_models={
+            "cohere": {
+                "_default": {
+                    "model": "command-a-reasoning-08-2025",
+                    "effort": "high",
+                }
+            }
+        },
+    )
 
-    with pytest.raises(RuntimeError, match=message):
-        caller.call_typed("fixer", "{}", Delta)
+    first = _caller(tmp_path, FakeClient(), settings)
+    second = _caller(tmp_path, FakeClient(), settings)
+    third = _caller(tmp_path, FakeClient(), settings)
 
-    assert len(calls) == 1
+    assert first.call_typed("fixer", "{}", Delta).changed_files == []
+    assert second.call_typed("fixer", "{}", Delta).changed_files == []
+    assert third.call_typed("parser", "schedule nurses", ProblemSpec).problem_type == "scheduling"
+
+    assert len(calls) == 4
+    assert calls[0]["response_format"] is Delta
+    assert all("response_format" not in call for call in calls[1:3])
+    assert calls[3]["response_format"] is ProblemSpec
 
 
 def test_provider_model_overrides_are_keyed_by_any_llm_provider(tmp_path):
@@ -414,20 +510,25 @@ def test_provider_model_overrides_are_keyed_by_any_llm_provider(tmp_path):
     assert calls[0]["model"] == "amazon.nova-pro-v1:0"
 
 
-def test_typed_call_falls_back_when_provider_rejects_all_response_formats(tmp_path):
+def test_format_rejection_does_not_consume_generated_response_attempts(tmp_path):
     calls: list[dict] = []
+    fallback_responses = iter(
+        [
+            "not JSON",
+            "still not JSON",
+            '{"changed_files":[{"path":"pom.xml","content":"<project />"}]}',
+        ]
+    )
 
     class FakeClient:
         def completion(self, **params):
             calls.append(params)
             if "response_format" in params:
-                raise TypeError("response_format is not supported")
+                raise UnsupportedParameterError("response_format", "bedrock")
             return SimpleNamespace(
                 choices=[
                     SimpleNamespace(
-                        message=SimpleNamespace(
-                            content='{"changed_files":[{"path":"pom.xml","content":"<project />"}]}'
-                        )
+                        message=SimpleNamespace(content=next(fallback_responses))
                     )
                 ]
             )
@@ -441,10 +542,158 @@ def test_typed_call_falls_back_when_provider_rejects_all_response_formats(tmp_pa
     delta = caller.call_typed("fixer", "{}", Delta)
 
     assert delta.changed_files[0].path == "pom.xml"
+    assert len(calls) == 4
+    assert calls[0]["response_format"] is Delta
+    assert all("response_format" not in call for call in calls[1:])
+
+
+def test_any_llm_validation_error_consumes_attempt_then_uses_prompt_fallback(tmp_path):
+    calls: list[dict] = []
+    fallback_responses = iter(
+        [
+            "not JSON",
+            '{"changed_files":[{"path":"pom.xml","content":"<project />"}]}',
+        ]
+    )
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if params.get("response_format") is Delta:
+                raise _invalid_delta_error()
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=next(fallback_responses)))]
+            )
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files[0].path == "pom.xml"
     assert len(calls) == 3
     assert calls[0]["response_format"] is Delta
-    assert calls[1]["response_format"]["type"] == "json_schema"
-    assert "response_format" not in calls[2]
+    assert all("response_format" not in call for call in calls[1:])
+
+
+def test_raw_call_retries_non_object_json_without_response_format(tmp_path):
+    calls: list[dict] = []
+    responses = iter(["not JSON", '{"problemType":"test"}'])
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=next(responses)))]
+            )
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    raw = caller.call("parser", "make a schedule")
+
+    assert json.loads(raw) == {"problemType": "test"}
+    assert len(calls) == 2
+    assert all("response_format" not in call for call in calls)
+
+
+def test_truncated_response_consumes_attempt_and_retries_same_mode(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            finish_reason="length",
+                            message=SimpleNamespace(content='{"changed_files":['),
+                        )
+                    ]
+                )
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=Delta(changed_files=[])))]
+            )
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files == []
+    assert len(calls) == 2
+    assert all(call["response_format"] is Delta for call in calls)
+
+
+@pytest.mark.parametrize(
+    ("response", "expected_exception", "match"),
+    [
+        (
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="content_filter",
+                        message=SimpleNamespace(content="blocked"),
+                    )
+                ]
+            ),
+            ContentFilterFinishReasonError,
+            None,
+        ),
+        (
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="stop",
+                        message=SimpleNamespace(content=None, refusal="policy refusal"),
+                    )
+                ]
+            ),
+            ValueError,
+            "refused by the provider",
+        ),
+    ],
+)
+def test_filtered_or_refused_response_is_terminal(
+    tmp_path,
+    response,
+    expected_exception,
+    match,
+):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            return response
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    with pytest.raises(expected_exception, match=match):
+        caller.call_typed("fixer", "{}", Delta)
+
+    assert len(calls) == 1
+
+
+def test_length_exception_from_any_llm_is_retried(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if len(calls) == 1:
+                raise LengthFinishReasonError(completion=SimpleNamespace())
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=Delta(changed_files=[])))]
+            )
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    assert caller.call_typed("fixer", "{}", Delta).changed_files == []
+    assert len(calls) == 2
 
 
 def test_missing_provider_model_config_fails_before_call(tmp_path):
@@ -457,3 +706,248 @@ def test_missing_provider_model_config_fails_before_call(tmp_path):
 
     with pytest.raises(ValueError, match="No model configuration for provider='bedrock'"):
         caller.call_typed("fixer", "{}", Delta)
+
+
+def test_typed_call_reraises_non_format_errors_without_downgrading(tmp_path):
+    """A non-format error on a structured call must surface immediately.
+
+    It must NOT be swallowed as "structured output unavailable" and silently
+    retried without structured output — that would mask transient/auth failures.
+    """
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            raise RuntimeError("upstream connection reset")
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    with pytest.raises(RuntimeError, match="connection reset"):
+        caller.call_typed("fixer", "{}", Delta)
+
+    # No fallback attempts: the error is raised on the very first call.
+    assert len(calls) == 1
+
+
+def test_format_words_do_not_mask_provider_failures(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            raise RuntimeError("structured output service timed out")
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    with pytest.raises(RuntimeError, match="timed out"):
+        caller.call_typed("fixer", "{}", Delta)
+
+    assert len(calls) == 1
+
+
+def test_invalid_response_format_schema_falls_back_without_spending_an_attempt(tmp_path):
+    calls: list[dict] = []
+    fallback_responses = iter(
+        [
+            "not JSON",
+            "still not JSON",
+            '{"changed_files":[{"path":"pom.xml","content":"<project />"}]}',
+        ]
+    )
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if "response_format" in params:
+                raise InvalidRequestError(
+                    "schema is invalid",
+                    provider_name="openai",
+                    status_code=400,
+                    param="response_format",
+                )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=next(fallback_responses))
+                    )
+                ]
+            )
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files[0].path == "pom.xml"
+    assert len(calls) == 4
+    assert calls[0]["response_format"] is Delta
+    assert all("response_format" not in call for call in calls[1:])
+
+
+def test_openai_invalid_schema_message_falls_back_without_param_metadata(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if "response_format" in params:
+                raise InvalidRequestError(
+                    "Invalid schema for response_format 'Delta': "
+                    "'additionalProperties' is required to be supplied and to be false.",
+                    provider_name="openai",
+                    status_code=400,
+                )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content='{"changed_files":[]}')
+                    )
+                ]
+            )
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files == []
+    assert len(calls) == 2
+    assert "response_format" not in calls[1]
+
+
+def test_cohere_invalid_json_schema_message_falls_back_without_param_metadata(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if "response_format" in params:
+                raise InvalidRequestError(
+                    "invalid request: response_format validation: invalid 'json_schema' "
+                    "provided: `object` type must have at least one required field",
+                    provider_name="cohere",
+                    status_code=400,
+                )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content='{"changed_files":[]}')
+                    )
+                ]
+            )
+
+    settings = AppSettings(
+        provider="cohere",
+        provider_models={"cohere": _bedrock_provider_models()["bedrock"]},
+    )
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    delta = caller.call_typed("fixer", "{}", Delta)
+
+    assert delta.changed_files == []
+    assert len(calls) == 2
+    assert "response_format" not in calls[1]
+
+
+def test_cohere_no_valid_structured_response_falls_back_to_prompt_schema(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if "response_format" in params:
+                raise InvalidRequestError(
+                    "No valid response generated. Try updating messages",
+                    provider_name="cohere",
+                    status_code=422,
+                    error_type="NO_VALID_RESPONSE_GENERATED",
+                )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content='{"changed_files":[]}')
+                    )
+                ]
+            )
+
+    settings = AppSettings(
+        provider="cohere",
+        provider_models={"cohere": _bedrock_provider_models()["bedrock"]},
+    )
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    first = caller.call_typed("reviewer", "first", Delta)
+    second = caller.call_typed("reviewer", "second", Delta)
+
+    assert first.changed_files == []
+    assert second.changed_files == []
+    assert len(calls) == 4
+    assert calls[0]["response_format"] is Delta
+    assert "response_format" not in calls[1]
+    assert calls[2]["response_format"] is Delta
+    assert "response_format" not in calls[3]
+    assert '"changed_files"' in calls[1]["messages"][0]["content"]
+
+
+def test_cohere_invalid_tool_generation_falls_back_to_prompt_schema(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            if "response_format" in params:
+                raise InvalidRequestError(
+                    "your request resulted in an invalid tool generation",
+                    provider_name="cohere",
+                    status_code=422,
+                    error_type="INVALID_TOOL_GENERATION",
+                )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content='{"changed_files":[]}')
+                    )
+                ]
+            )
+
+    settings = AppSettings(
+        provider="cohere",
+        provider_models={"cohere": _bedrock_provider_models()["bedrock"]},
+    )
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    first = caller.call_typed("reviewer", "first", Delta)
+    second = caller.call_typed("reviewer", "second", Delta)
+
+    assert first.changed_files == []
+    assert second.changed_files == []
+    assert len(calls) == 4
+    assert calls[0]["response_format"] is Delta
+    assert "response_format" not in calls[1]
+    assert calls[2]["response_format"] is Delta
+    assert "response_format" not in calls[3]
+
+
+def test_invalid_request_for_another_parameter_remains_terminal(tmp_path):
+    calls: list[dict] = []
+
+    class FakeClient:
+        def completion(self, **params):
+            calls.append(params)
+            raise InvalidRequestError(
+                "messages are invalid",
+                provider_name="openai",
+                status_code=400,
+                param="messages",
+            )
+
+    settings = AppSettings(provider="openai")
+    caller = _caller(tmp_path, FakeClient(), settings)
+
+    with pytest.raises(InvalidRequestError, match="messages are invalid"):
+        caller.call_typed("fixer", "{}", Delta)
+
+    assert len(calls) == 1

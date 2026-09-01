@@ -37,6 +37,7 @@ class _FakeCaller:
             assert model_type is ProblemSpec
             return _problem_spec()
 
+        assert model_type is Delta
         if agent == "model_builder":
             return Delta(
                 projectName=self._pn,

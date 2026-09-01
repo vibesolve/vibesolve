@@ -12,16 +12,22 @@ as a compatibility alias for any-llm's ``anthropic`` provider.
 
 import json
 import re
+import threading
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, TypeVar, cast
+from typing import Any, Callable, Literal, TypeVar, cast
 
 import structlog
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import (
+    ContentFilterFinishReasonError,
+    LengthFinishReasonError,
+    UnsupportedParameterError,
+)
 from dotenv import load_dotenv
 from json_repair import repair_json
+from pydantic import ValidationError
 
 from vibesolve.agents.prompts import load_prompt
 from vibesolve.agents.provider_bootstrap import ensure_provider_dependencies
@@ -30,6 +36,10 @@ from vibesolve.config.settings import AgentModelConfig, AppSettings
 T = TypeVar("T")
 
 _PROVIDER_ALIASES: dict[str, str] = {"claude": "anthropic"}
+_STRUCTURED_OUTPUT_REJECTION_LOCK = threading.Lock()
+_STRUCTURED_OUTPUT_REJECTIONS: set[tuple[str, str, type[Any]]] = set()
+_ResponseFormatRejectionKind = Literal["capability", "request"]
+_MAX_GENERATED_ATTEMPTS = 3
 _ANTHROPIC_RESPONSE_TOKENS = 8_192
 _ANTHROPIC_REASONING_TOKENS = {
     "none": 0,
@@ -43,6 +53,24 @@ _ANTHROPIC_TIMEOUT_S = 900.0
 def _any_llm_provider(provider: str) -> str:
     normalized = provider.strip().lower()
     return _PROVIDER_ALIASES.get(normalized, normalized)
+
+
+def _structured_output_was_rejected(
+    provider: str,
+    model: str,
+    model_type: type[Any],
+) -> bool:
+    with _STRUCTURED_OUTPUT_REJECTION_LOCK:
+        return (provider, model, model_type) in _STRUCTURED_OUTPUT_REJECTIONS
+
+
+def _remember_structured_output_rejection(
+    provider: str,
+    model: str,
+    model_type: type[Any],
+) -> None:
+    with _STRUCTURED_OUTPUT_REJECTION_LOCK:
+        _STRUCTURED_OUTPUT_REJECTIONS.add((provider, model, model_type))
 
 
 def _extract_and_repair(text: str) -> str:
@@ -103,15 +131,18 @@ def _reasoning_effort(effort: str) -> str | None:
     return None if effort == "auto" else effort
 
 
-def _raw_json_response_format() -> dict[str, Any]:
-    return {
-        "type": "json_schema",
-        "json_schema": {
-            "name": "json_response",
-            "schema": {"type": "object", "additionalProperties": True},
-            "strict": False,
-        },
-    }
+def _prompt_with_schema(prompt: str, model_type: type[Any]) -> str:
+    schema = json.dumps(
+        model_type.model_json_schema(by_alias=True),  # type: ignore[attr-defined]
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return (
+        f"{prompt.rstrip()}\n\n"
+        "The API cannot enforce the response format for this request. Return exactly one "
+        "JSON object matching the following JSON Schema. Do not add prose or markdown fences.\n"
+        f"{schema}\n"
+    )
 
 
 def _serialize_parsed(parsed: Any) -> str:
@@ -125,7 +156,7 @@ def _serialize_parsed(parsed: Any) -> str:
 
 def _first_attr(obj: Any, *names: str) -> Any:
     for name in names:
-        value = getattr(obj, name, None)
+        value = obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
         if value is not None:
             return value
     return None
@@ -192,6 +223,24 @@ def _response_text(resp: Any) -> str:
     return str(resp)
 
 
+def _raise_for_terminal_response(agent: str, resp: Any) -> None:
+    choices = _first_attr(resp, "choices")
+    if not choices:
+        return
+
+    choice = choices[0]
+    finish_reason = _first_attr(choice, "finish_reason")
+    if finish_reason == "length":
+        raise LengthFinishReasonError(completion=cast(Any, resp))
+    if finish_reason == "content_filter":
+        raise ContentFilterFinishReasonError(completion=cast(Any, resp))
+
+    message = _first_attr(choice, "message")
+    refusal = _first_attr(message, "refusal") if message is not None else None
+    if refusal:
+        raise ValueError(f"Agent '{agent}' response was refused by the provider")
+
+
 def _usage_count(usage: Any, *names: str) -> int:
     return int(_first_attr(usage, *names) or 0)
 
@@ -242,7 +291,7 @@ class BaseAgentCaller(ABC):
     def call_typed(self, agent: str, user_message: str, model_type: type[T]) -> T:
         """Call an agent and parse the response into a typed Pydantic model."""
         last_exc: Exception | None = None
-        for _ in range(3):
+        for _ in range(_MAX_GENERATED_ATTEMPTS):
             raw = self.call(agent, user_message)
             try:
                 return model_type.model_validate_json(raw)  # type: ignore[attr-defined]
@@ -287,50 +336,93 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         model_type: type[T] | None,
     ) -> T | str:
         last_exc: Exception | None = None
-        structured_unavailable = False
-        raw_schema_unavailable = False
-        for attempt in range(1, 4):
-            use_structured = model_type is not None and not structured_unavailable
-            use_raw_schema = not use_structured and not raw_schema_unavailable
+        agent_config = self._model_config_for(agent)
+        model = agent_config.model
+        effort = agent_config.effort
+        provider = _any_llm_provider(self._settings.provider)
+        use_structured = model_type is not None
+        if model_type is not None:
+            use_structured = not _structured_output_was_rejected(provider, model, model_type)
+        generated_attempts = 0
+
+        while generated_attempts < _MAX_GENERATED_ATTEMPTS:
+            attempt = generated_attempts + 1
             try:
                 raw = self._call_once(
                     agent,
                     user_message,
-                    model_type=model_type if use_structured else None,
-                    use_raw_schema=use_raw_schema,
+                    response_model=model_type if use_structured else None,
+                    prompt_schema=model_type if model_type is not None and not use_structured else None,
                     attempt=attempt,
+                    model=model,
+                    effort=effort,
                 )
+            except ValidationError as exc:
+                if not use_structured:
+                    raise
+                generated_attempts += 1
+                last_exc = exc
+                use_structured = False
+                self._log.warning(
+                    "structured_output_parse_failed",
+                    agent=agent,
+                    attempt=attempt,
+                    error=str(exc),
+                )
+                continue
+            except LengthFinishReasonError as exc:
+                generated_attempts += 1
+                last_exc = exc
+                self._log.warning(
+                    "agent_response_truncated",
+                    agent=agent,
+                    attempt=attempt,
+                    error=str(exc),
+                )
+                continue
             except Exception as exc:
-                if use_structured and _looks_like_response_format_rejection(exc):
-                    structured_unavailable = True
+                rejection_kind = (
+                    _classify_response_format_rejection(exc) if use_structured else None
+                )
+                if rejection_kind is not None:
+                    assert model_type is not None
+                    if rejection_kind == "capability":
+                        _remember_structured_output_rejection(provider, model, model_type)
+                    use_structured = False
                     self._log.warning(
                         "structured_output_fallback",
                         agent=agent,
                         attempt=attempt,
-                        error=str(exc),
-                    )
-                    continue
-                if use_raw_schema and _looks_like_response_format_rejection(exc):
-                    raw_schema_unavailable = True
-                    self._log.warning(
-                        "json_schema_output_fallback",
-                        agent=agent,
-                        attempt=attempt,
+                        rejection_kind=rejection_kind,
                         error=str(exc),
                     )
                     continue
                 raise
 
+            generated_attempts += 1
+
             if model_type is None:
-                if raw.strip():
+                try:
+                    parsed = json.loads(raw)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("agent response must be a JSON object")
                     return raw
-                self._log.warning("empty_response_retry", agent=agent, attempt=attempt)
+                except (json.JSONDecodeError, ValueError) as exc:
+                    last_exc = exc
+                    self._log.warning(
+                        "agent_parse_failed",
+                        agent=agent,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
                 continue
 
             try:
                 return model_type.model_validate_json(raw)  # type: ignore[attr-defined]
-            except Exception as exc:
+            except ValidationError as exc:
                 last_exc = exc
+                if use_structured:
+                    use_structured = False
                 self._log.warning(
                     "agent_parse_failed",
                     agent=agent,
@@ -340,30 +432,47 @@ class AnyLLMAgentCaller(BaseAgentCaller):
 
         if last_exc is not None:
             raise last_exc
-        raise ValueError(f"Agent '{agent}' returned an empty response after 3 attempts")
+        raise ValueError(
+            f"Agent '{agent}' returned no valid response after {_MAX_GENERATED_ATTEMPTS} attempts"
+        )
 
     def _call_once(
         self,
         agent: str,
         user_message: str,
         *,
-        model_type: type[Any] | None,
-        use_raw_schema: bool,
+        response_model: type[Any] | None,
+        prompt_schema: type[Any] | None,
         attempt: int,
+        model: str,
+        effort: str,
     ) -> str:
-        agent_config = self._model_config_for(agent)
-        model = agent_config.model
-        effort = agent_config.effort
-
-        self._log.info("calling_agent", agent=agent, model=model, effort=effort, attempt=attempt)
+        output_mode = "typed" if response_model is not None else "prompt"
+        self._log.info(
+            "calling_agent",
+            agent=agent,
+            model=model,
+            effort=effort,
+            attempt=attempt,
+            output_mode=output_mode,
+        )
         t0 = time.time()
 
-        resp = self._call_completion(agent, user_message, model, effort, model_type, use_raw_schema)
-        content = _extract_and_repair(_response_text(resp))
+        resp = self._call_completion(
+            agent,
+            user_message,
+            model,
+            effort,
+            response_model,
+            prompt_schema,
+        )
 
         elapsed = time.time() - t0
         self.agent_times[agent] = self.agent_times.get(agent, 0.0) + elapsed
         self._record_usage(agent, model, resp)
+
+        _raise_for_terminal_response(agent, resp)
+        content = _extract_and_repair(_response_text(resp))
 
         self._log.info("agent_response", agent=agent, chars=len(content), elapsed_s=round(elapsed, 2))
 
@@ -391,13 +500,17 @@ class AnyLLMAgentCaller(BaseAgentCaller):
         user_message: str,
         model: str,
         effort: str,
-        model_type: type[Any] | None,
-        use_raw_schema: bool,
+        response_model: type[Any] | None,
+        prompt_schema: type[Any] | None,
     ) -> Any:
+        system_prompt = load_prompt(agent)
+        if prompt_schema is not None:
+            system_prompt = _prompt_with_schema(system_prompt, prompt_schema)
+
         api_params: dict[str, Any] = {
             "model": model,
             "messages": [
-                {"role": "system", "content": load_prompt(agent)},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
         }
@@ -412,10 +525,8 @@ class AnyLLMAgentCaller(BaseAgentCaller):
                 _ANTHROPIC_RESPONSE_TOKENS + _ANTHROPIC_REASONING_TOKENS.get(effort, 0)
             )
             api_params["timeout"] = _ANTHROPIC_TIMEOUT_S
-        if model_type is not None:
-            api_params["response_format"] = model_type
-        elif use_raw_schema:
-            api_params["response_format"] = _raw_json_response_format()
+        if response_model is not None:
+            api_params["response_format"] = response_model
         return self._client.completion(**api_params)
 
     def _record_usage(self, agent: str, model: str, resp: Any) -> None:
@@ -474,7 +585,14 @@ def make_caller_factory(settings: AppSettings) -> Callable:
     return _factory
 
 
-def _looks_like_response_format_rejection(exc: Exception) -> bool:
+def _classify_response_format_rejection(
+    exc: Exception,
+) -> _ResponseFormatRejectionKind | None:
+    """Classify failures that should use prompt-based structured output.
+
+    Capability failures are safe to cache for the provider/model/schema tuple.
+    Request-specific generation failures should only affect the current call.
+    """
     format_markers = (
         "response_format",
         "response format",
@@ -510,6 +628,7 @@ def _looks_like_response_format_rejection(exc: Exception) -> bool:
         "additional properties",
     )
 
+    request_specific_rejection = False
     pending: list[Exception] = [exc]
     seen: set[int] = set()
     while pending:
@@ -522,7 +641,7 @@ def _looks_like_response_format_rejection(exc: Exception) -> bool:
         if isinstance(current, UnsupportedParameterError) and isinstance(parameter_name, str):
             normalized_parameter = parameter_name.lower()
             if any(marker in normalized_parameter for marker in format_markers):
-                return True
+                return "capability"
 
         details = [f"{type(current).__name__}: {current}"]
         parameter_values: list[str] = []
@@ -549,31 +668,31 @@ def _looks_like_response_format_rejection(exc: Exception) -> bool:
             for parameter in parameter_values
         )
         if format_parameter_rejected and status_code in {400, 422}:
-            return True
+            return "capability"
 
         text = " ".join(details).lower()
         if status_code == 422 and any(
             marker in text
             for marker in ("no_valid_response_generated", "invalid_tool_generation")
         ):
-            return True
+            request_specific_rejection = True
         if any(marker in text for marker in format_markers) and any(
             marker in text for marker in unsupported_markers
         ):
-            return True
+            return "capability"
         if (
             status_code in {None, 400, 422}
             and any(marker in text for marker in format_markers)
             and any(marker in text for marker in invalid_schema_markers)
         ):
-            return True
+            return "capability"
 
         for name in ("original_exception", "__cause__", "__context__"):
             nested = getattr(current, name, None)
             if isinstance(nested, Exception):
                 pending.append(nested)
 
-    return False
+    return "request" if request_specific_rejection else None
 
 
 # ---------------------------------------------------------------------------
