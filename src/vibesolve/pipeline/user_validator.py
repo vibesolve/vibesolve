@@ -53,10 +53,5 @@ def run_user_validation_loop(
             "problem_spec": problem_spec.to_legacy_dict(),
             "user_feedback": feedback,
         })
-        raw_updated = caller.call("user_validator_update", user_msg)
-        updated_dict = json.loads(raw_updated)
-        # Unwrap if the LLM wrapped the spec in a {"problem_spec": {...}} envelope
-        if "problem_spec" in updated_dict and "problemType" not in updated_dict:
-            updated_dict = updated_dict["problem_spec"]
-        problem_spec = ProblemSpec.model_validate(updated_dict)
+        problem_spec = caller.call_typed("user_validator_update", user_msg, ProblemSpec)
         log.info("user_validation_spec_updated", iteration=iteration)
