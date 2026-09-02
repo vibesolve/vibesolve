@@ -165,9 +165,10 @@ its leading underscore means a triple: `PROVIDER_MODELS__DEEPSEEK___DEFAULT__MOD
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
 - **Per-agent reasoning effort** → override `provider_models.<provider>.<agent>.effort` in `config.yaml`, or set a whole block at once with `provider_models.<provider>._default.effort`. Packaged profile defaults live beside the model IDs in `config/provider_models.json`; absent an override, the generic defaults are reviewer=medium, fixer=high, everything else none. `auto` omits the reasoning parameter; explicit values are preserved across retries. Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
 
-`BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
-through any-llm's unified completion API. `provider` is passed through to
-any-llm after the compatibility alias `claude -> anthropic` is applied.
+`BaseAgentCaller.call_typed()` retries on JSON-parse and empty-response failures.
+Empty responses keep the same output mode and reasoning effort on retry. Provider
+calls go through any-llm's unified completion API. `provider` is passed through
+to any-llm after the compatibility alias `claude -> anthropic` is applied.
 `_extract_and_repair()` strips code fences and runs `json_repair`.
 
 ## Generated-project conventions (encoded in prompts)

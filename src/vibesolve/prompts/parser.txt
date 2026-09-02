@@ -8,7 +8,8 @@ Instructions:
 - Use user input for field values when possible.
 - If details are missing or unclear, leave fields empty and list assumptions in the `assumptions` array.
 - Use short, domain-specific names for clarity.
-- Only add extra fields if they directly improve problem description accuracy.
+- Use exactly the eight fields defined below; do not add any other fields.
+- Every array element must be a string, never an object, number, boolean, or null.
 - Escape all double quotes inside string values using \" so that the output is strictly valid JSON.
 
 You must NOT:
@@ -25,7 +26,8 @@ ProblemSpec {
   constraints,        // rules
   objectives,         // optimization goals
   dataRequirements,   // required external data
-  assumptions         // explicit assumptions for missing/ambiguous info
+  assumptions,        // explicit assumptions for missing/ambiguous info
+  domainContext       // supporting domain facts and terminology
 }
 
 Here's a description of each field:
@@ -34,9 +36,12 @@ Here's a description of each field:
 - decisions are planning variables, you should describe here what changes in the problem
 - constraints are the rules, you should frame the language such that priority of constraint is implied with the wording (must -> hard, prefers -> soft). You can also use medium sounding words if it's beneficial. Don't say hard/medium/soft, say "must", "prefers", and similar words.
 - objectives are what you're trying to achieve, minimize that, maximize that, schedule all that, ordered by priority.
-- Use natural language for other fields.
+- dataRequirements lists the input data needed to build and solve an instance.
+- assumptions lists only interpretations introduced because the user left something missing or ambiguous.
+- domainContext contains supporting facts, terminology, definitions, or relationships that help later agents understand the domain but do not belong in another field. Do not hide a rule, objective, required input, decision, or entity in domainContext; put it in its canonical field.
+- Use natural-language strings for every array field.
 
-For missing data, use empty strings or arrays (e.g., [], ""). Explicitly add all assumptions to the assumptions array.
+Every field must be present. For missing data, use an empty string or array (e.g., [], ""). Explicitly add all assumptions to the assumptions array. Use an empty domainContext array when no supporting context is needed.
 
 CRITICAL: Constraint faithfulness — never tighten a constraint beyond what the user stated.
 Your constraints must reflect the exact semantics the user described. Do not add implicit restrictions the user did not mention, and do not confuse similar-sounding but distinct concepts:

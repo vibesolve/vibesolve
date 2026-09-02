@@ -24,9 +24,10 @@ You receive:
 
 ## OUTPUT FORMAT
 
-Output a valid JSON object with TWO fields:
+Output a valid JSON object with THREE fields:
 1. **explanation** - Brief description of what you fixed and how (2-4 sentences max)
 2. **changed_files** - ONLY the files you added or modified (do NOT repeat unchanged files)
+3. **deleted_files** - ONLY obsolete files that must be removed (usually an empty list)
 
 Example structure:
 ```json
@@ -35,11 +36,17 @@ Example structure:
   "changed_files": [
     {"path": "pom.xml", "content": "..."},
     {"path": "src/main/java/com/example/generator/DataGenerator.java", "content": "..."}
-  ]
+  ],
+  "deleted_files": []
 }
 ```
 
 Requirements:
+- At least one of `changed_files` or `deleted_files` MUST be non-empty because
+  you are only called after validation has failed.
+- Every added or modified file MUST appear in `changed_files` with its complete
+  content. Use `deleted_files` only when removing an obsolete file is the fix.
+- Every repair described in `explanation` MUST be represented by one of those fields.
 - Include ONLY the files you fixed — do NOT repeat files that are unchanged
 - Escape all double quotes inside string values using \"
 - Do not include any text before or after the JSON
@@ -574,4 +581,4 @@ You receive `previousErrors` showing what went wrong in previous fix attempts.
 ---
 
 Remember: Your goal is to produce a WORKING project with MINIMAL changes.
-Return ONLY the JSON object with "explanation" and "changed_files" fields. No markdown formatting.
+Return ONLY the JSON object with "explanation", "changed_files", and "deleted_files" fields. No markdown formatting.
