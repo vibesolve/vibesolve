@@ -20,13 +20,13 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "openai>=2.53.0",
-    "anthropic>=0.121.0",
+    "any-llm-sdk==1.26.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.15.0",
     "python-dotenv>=1.2.1",
     "structlog>=24.4",
     "typer>=0.27.1",
+    "uv==0.12.7",
     "httpx>=0.28.1",
     "pyyaml>=6.0",
     "json-repair>=0.62.0",
@@ -37,14 +37,22 @@ dev = [
     "pytest>=8.0",
 ]
 
+[dependency-groups]
+provider-lock = [
+    "any-llm-sdk[all]",
+]
+
 [project.scripts]
-vibesolve = "vibesolve.cli.main:app"
+vibesolve = "vibesolve.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"vibesolve" = ["prompts/*.txt"]
+"vibesolve" = ["prompts/*.txt", "config/provider_models.json"]
+
+[tool.setuptools.data-files]
+"share/vibesolve/provider-lock" = ["pyproject.toml", "uv.lock"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

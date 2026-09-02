@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Multi-agent system that generates complete Timefold Solver projects from natural language problem descriptions. Uses OpenAI API with a sequential pipeline (up to 9 agents) where each agent specializes in one aspect of code generation. Generated projects are validated via Docker (Maven compile + execution) and automatically fixed by a feedback loop. An optional interactive user-validation step lets users review and correct the parsed problem spec before code generation begins.
+Multi-agent system that generates complete Timefold Solver projects from natural language problem descriptions. LLM calls go through any-llm with a sequential pipeline (up to 9 agents) where each agent specializes in one aspect of code generation. Generated projects are validated via Docker (Maven compile + execution) and automatically fixed by a feedback loop. An optional interactive user-validation step lets users review and correct the parsed problem spec before code generation begins.
 
 ## Setup
 
@@ -20,8 +20,8 @@ uv sync --extra dev
 # Activate it — once per shell; puts `vibesolve` and `pytest` on PATH
 source .venv/bin/activate
 
-# Configure API key
-# Create .env.local with OPENAI_API_KEY=your-key
+# Configure provider credentials
+# Create .env.local with credentials such as OPENAI_API_KEY=your-key
 
 # Build the Docker validator image (first run only)
 docker build -t timefold-validator docker/
@@ -109,10 +109,10 @@ The pipeline never starts Docker itself; it only writes files. You control when 
 Settings are resolved in this priority order (highest → lowest):
 
 1. **CLI flags** — `--max-iterations`, `--workers`, `--reasoning-effort`, `--no-validation-loop`, `--serve`, `--user-validate`
-2. **Environment variables** — `OPENAI_API_KEY`, `MODELS__FIXER`, …
+2. **Environment variables** — `OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL`, …
 3. **YAML config file** — `config.yaml` (auto-loaded if present) or `--config <path>`
 4. **`.env.local`** — API key fallback
-5. **Built-in defaults**
+5. **Packaged defaults** — `src/vibesolve/config/provider_models.json`
 
 ### YAML config file
 
@@ -123,7 +123,7 @@ Pass a different file with `--config`:
 vibesolve run --config path/to/other.yaml
 ```
 
-Available settings (all optional — omit to use the default):
+Available settings (all optional — omit to use the packaged profile):
 
 ```yaml
 enable_caching: true
@@ -131,32 +131,31 @@ enable_docker_validation: true
 max_fix_iterations: 10
 default_workers: 3
 
-# Per-agent reasoning effort (low | medium | high). Applies to both
-# providers. --reasoning-effort overrides every agent at once.
-efforts:
-  parser:                  low
-  model_builder:           low
-  constraint_builder:      low
-  io:                      low
-  integrator:              low
-  reviewer:                medium
-  fixer:                   high
-  user_validator_explain:  low
-  user_validator_update:   low
+# any-llm provider name. `claude` aliases to `anthropic`.
+provider: openai
 
-models:
-  parser:                  gpt-5-mini
-  model_builder:           gpt-5-mini
-  constraint_builder:      gpt-5-mini
-  io:                      gpt-5-mini
-  integrator:              gpt-5-mini
-  reviewer:                gpt-5-mini
-  fixer:                   gpt-5-mini
-  user_validator_explain:  gpt-5-mini   # --user-validate: generates spec summary
-  user_validator_update:   gpt-5-mini   # --user-validate: applies user feedback
+# Per-agent model and reasoning effort (auto | none | low | medium | high).
+# auto omits the reasoning parameter and lets the provider/model choose.
+# --reasoning-effort overrides every agent's effort at once.
+#
+# Built-in provider profiles live in src/vibesolve/config/provider_models.json
+# and are included in installed wheels. This mapping only contains overrides.
+# An optional `_default` sets model and/or effort for every agent in a provider
+# block; per-agent entries override it field by field.
+provider_models:
+  bedrock:
+    _default:
+      model: amazon.nova-lite-v1:0
+      effort: none
+    reviewer:
+      model: amazon.nova-pro-v1:0
+      effort: medium
+    fixer:
+      model: amazon.nova-pro-v1:0
+      effort: high
 ```
 
-Keep `OPENAI_API_KEY` in `.env.local` — never put it in `config.yaml`.
+Keep provider credentials in `.env.local` or provider-native credential stores — never put secrets in `config.yaml`.
 
 ## Architecture
 
@@ -240,7 +239,7 @@ agents_arch/
 ├── src/
 │   └── vibesolve/
 │       ├── agents/
-│       │   ├── client.py        # AgentCaller — OpenAI Responses API wrapper
+│       │   ├── client.py        # AgentCaller — any-llm-backed provider wrapper
 │       │   └── prompts.py       # Prompt file loader
 │       ├── benchmarking/
 │       │   ├── evaluator.py     # Docker-heavy benchmark stages (package, Quarkus boot, endpoint round-trip, Docker build)
@@ -275,7 +274,7 @@ agents_arch/
 │   └── pom-warmup.xml           # Pre-bakes Maven deps into Docker image
 ├── user_input/                  # Problem description .txt files
 ├── pyproject.toml               # Package metadata + CLI entry points
-└── .env.local                   # OPENAI_API_KEY (not committed)
+└── .env.local                   # provider credentials (not committed)
 ```
 
 ## Docker Validation & Feedback Loop

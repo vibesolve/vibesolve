@@ -55,6 +55,20 @@ _INPUT_BUILDERS = {
 GENERATION_STAGES = ["model_builder", "constraint_builder", "io", "integrator"]
 
 
+def _project_output_dir(results_dir: Path, project_name: str) -> Path:
+    """Return a direct child of results_dir, even if model validation was bypassed."""
+    name_path = Path(project_name)
+    project_dir = results_dir / project_name
+    if (
+        name_path.is_absolute()
+        or name_path.name != project_name
+        or project_name in {".", ".."}
+        or project_dir.resolve().parent != results_dir.resolve()
+    ):
+        raise ValueError(f"refusing to write unsafe project name: {project_name!r}")
+    return project_dir
+
+
 def _write_manifest(manifest: ProjectManifest, out_dir: Path) -> None:
     root = out_dir.resolve()
     for f in manifest.files:
@@ -132,8 +146,7 @@ def run_problem(
         pipeline_start = time.time()
 
         # 1) Parser: raw text → ProblemSpec
-        parser_raw = caller.call("parser", raw_problem)
-        problem_spec = ProblemSpec.model_validate_json(parser_raw)
+        problem_spec = caller.call_typed("parser", raw_problem, ProblemSpec)
         log.info("parser_complete", problem_type=problem_spec.problem_type)
 
         # 1b) Optional user validation: review/correct ProblemSpec before generation
@@ -198,7 +211,7 @@ def run_problem(
                 "no project name was produced by the pipeline; refusing to write "
                 "output into the results root"
             )
-        project_dir = results_dir / manifest.project_name
+        project_dir = _project_output_dir(results_dir, manifest.project_name)
         _write_manifest(manifest, project_dir)
 
         # Emit Docker artifacts when --serve was requested AND the project actually

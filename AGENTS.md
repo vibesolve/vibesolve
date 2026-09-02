@@ -28,14 +28,24 @@ docker build -t timefold-validator docker/   # pre-bakes Maven deps into the val
 
 Python 3.11+ is required (modern type annotations). Every command in this file assumes the venv is activated; without activation, prefix with `uv run` (e.g. `uv run pytest`). If uv cannot find a suitable Python, install one with `uv python install 3.13`.
 
-For the Anthropic/Claude provider, add `ANTHROPIC_API_KEY=...` to `.env.local` and pass `--provider claude` (or set it in `config.yaml`).
+Provider calls go through any-llm. Pass any supported any-llm provider name with
+`--provider` (for example `openai`, `anthropic`, `bedrock`); the legacy
+`claude` value is kept as an alias for `anthropic`. Credentials come from
+provider-specific environment variables or credential chains, or from the
+generic `API_KEY` setting where the provider accepts a single API key.
+Optional provider SDKs are installed on first use from any-llm's advertised
+extras. A non-default `provider-lock` dependency group resolves all provider
+extras into the single `uv.lock`; runtime installation exports constraints from
+that packaged lock and installs only the selected provider. The CLI then
+restarts itself once so it never runs the pipeline with mixed dependency
+versions in memory.
 
 Make sure the Docker daemon is running before the `docker build` (Linux:
 `sudo systemctl start docker`; macOS/Windows: launch Docker Desktop).
 
 ## CLI
 
-There is a single `vibesolve` command (defined in `pyproject.toml [project.scripts]` as `vibesolve.cli.main:app`) with two subcommands. Run them from the repo root.
+There is a single `vibesolve` command (defined in `pyproject.toml [project.scripts]` as `vibesolve.cli.main:main`) with two subcommands. Run them from the repo root.
 
 | Command | Purpose | Source |
 |---|---|---|
@@ -48,14 +58,14 @@ Run `vibesolve --help` (or `vibesolve run --help` / `vibesolve batch --help`) fo
 Flags shared by both subcommands:
 
 - `--config path/to.yaml` — use a different config file (the root `config.yaml` auto-loads otherwise)
-- `--provider openai|claude` — pick the LLM provider
+- `--provider PROVIDER` — any-llm provider name; `claude` aliases to `anthropic`
 - `--no-validation-loop` — skip the Docker validation/fixer loop entirely (prompt-debugging only)
 - `--max-iterations N` — cap fixer retries
 - `--serve` — on success, emit a portable `Dockerfile` + `docker-run.sh` into the generated project
 
 `run` only:
 
-- `--reasoning-effort low|medium|high` — overrides every agent's effort at once (per-agent defaults live in the `efforts:` config block; see below)
+- `--reasoning-effort auto|none|low|medium|high` — overrides every agent's effort at once (`auto` omits the reasoning parameter; per-agent settings live beside model names in `provider_models:`; see below)
 - `--user-validate` — pause after parsing to let the user review/correct the `ProblemSpec` interactively before code generation
 
 `batch` only:
@@ -69,7 +79,7 @@ Flags shared by both subcommands:
 ```
 user_input/*.txt
    │
-   ▼   Parser (gpt-5-mini)                            → ProblemSpec
+   ▼   Parser (configured provider model)             → ProblemSpec
    │
    ▼   [User Validator — Explain / Update]            ← --user-validate (optional, interactive)
    │
@@ -82,7 +92,7 @@ user_input/*.txt
    ▼   Docker validate    (mvn clean compile  →  mvn exec:java [timeout 30s]  →  mvn test)
    │
    ├─ PASS  → write ProblemSpec.json, ProjectManifest.json, project dir + .zip
-   └─ FAIL  → Fixer (gpt-5-mini, high effort) → re-validate, up to N iterations
+   └─ FAIL  → Fixer (high default effort) → re-validate, up to N iterations
 ```
 
 Each agent except Parser/UserValidator returns a `Delta` (`changed_files`, `deleted_files`, optional `projectName`/`basePackage`, optional `explanation`), which is merged into the accumulated `ProjectManifest` by
@@ -93,10 +103,12 @@ Each agent except Parser/UserValidator returns a `Delta` (`changed_files`, `dele
 ```
 src/vibesolve/
 ├── agents/
-│   ├── client.py          BaseAgentCaller + OpenAIAgentCaller + AnthropicAgentCaller + make_caller_factory
+│   ├── client.py          BaseAgentCaller + AnyLLMAgentCaller + compatibility aliases + make_caller_factory
 │   └── prompts.py         load_prompt() + _PROMPT_FILES (agent → filename map)
 ├── cli/                   main.py (entry point) + run_single.py (`run`) + run_batch.py (`batch`)
-├── config/settings.py     AppSettings (pydantic-settings) + load_settings(yaml)
+├── config/
+│   ├── settings.py        AppSettings (pydantic-settings) + load_settings(yaml)
+│   └── provider_models.json  Packaged built-in provider profiles
 ├── models/
 │   ├── domain.py          ProblemSpec, ProjectManifest, Delta, FileEntry, UserValidationExplanation
 │   └── results.py         ValidationResult, ProblemResult, BatchSummary, FixAttempt
@@ -119,7 +131,7 @@ docker/Dockerfile          eclipse-temurin:17-jdk-jammy + Maven
 docker/pom-warmup.xml      warms the Maven cache at image build with the generated projects' dependency set
 user_input/*.txt           Problem descriptions — input to the pipeline
 config.yaml                Project-level settings (auto-loaded; CLI flags override)
-.env.local                 OPENAI_API_KEY / ANTHROPIC_API_KEY — NEVER commit (copy from .env.example)
+.env.local                 provider credentials — NEVER commit (copy from .env.example)
 logs/run_<ts>/             pipeline.log + per-agent raw response files
 results/run_<ts>/          ProblemSpec.json, ProjectManifest.json, <project>/, <project>.zip
 ```
@@ -130,24 +142,33 @@ validation → pipeline → cli`; `config` is a leaf used by `cli`.
 ## Configuration (priority high → low)
 
 1. CLI flags
-2. Environment variables (`OPENAI_API_KEY`, `MODELS__FIXER=gpt-5`, `PROVIDER=claude`, …)
+2. Environment variables (`OPENAI_API_KEY`, `PROVIDER_MODELS__OPENAI__FIXER__MODEL=gpt-5`, `PROVIDER=bedrock`, …)
 3. `config.yaml` at repo root (auto-loaded if present)
 4. `.env.local`
-5. Built-in defaults in `config/settings.py`
+5. Built-in provider profiles in `src/vibesolve/config/provider_models.json`
 
-`MODELS__<AGENT>` and `CLAUDE_MODELS__<AGENT>` env vars override per-agent model
-names — pydantic-settings parses the `__` nesting.
+`PROVIDER_MODELS__<PROVIDER>__<AGENT>__MODEL` and
+`PROVIDER_MODELS__<PROVIDER>__<AGENT>__EFFORT` env vars override per-agent
+model and reasoning-effort settings. Pydantic-settings parses the `__` nesting.
+
+A provider block may carry an optional `_default` key (same level as the agents)
+holding `model` and/or `effort`; a `model_validator(mode="before")` on
+`AgentModels` spreads it across every agent before per-agent defaults are merged.
+For providers without a built-in profile, `_default.model` or an explicit model
+for every agent is required. Precedence: per-agent value > `_default` > built-in default. As an env override
+its leading underscore means a triple: `PROVIDER_MODELS__DEEPSEEK___DEFAULT__MODEL`.
 
 ## Modifying agent behavior
 
 - **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
-- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add a model default in `config/settings.py:AgentModels` (and `ClaudeAgentModels`), and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
+- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add the agent to `config/settings.py:AgentModels` and each profile in `config/provider_models.json`, and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent). Paths in this section are relative to `src/vibesolve/`.
 - **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
-- **Per-agent reasoning effort** → `config/settings.py:AgentEfforts` and the `efforts:` block in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else low). Read in `agents/client.py` via `settings.efforts.as_dict()[agent]`; `--reasoning-effort` overrides every agent at once.
+- **Per-agent reasoning effort** → override `provider_models.<provider>.<agent>.effort` in `config.yaml`, or set a whole block at once with `provider_models.<provider>._default.effort`. Packaged profile defaults live beside the model IDs in `config/provider_models.json`; absent an override, the generic defaults are reviewer=medium, fixer=high, everything else none. `auto` omits the reasoning parameter; explicit values are preserved across retries. Read in `agents/client.py` from the same provider config entry as the model name; `--reasoning-effort` overrides every agent at once for a run.
 
-`BaseAgentCaller.call_typed()` retries on JSON-parse failure. For Anthropic,
-`_extract_and_repair()` strips code fences and runs `json_repair`, because Claude
-has no JSON mode like OpenAI's Responses API.
+`BaseAgentCaller.call_typed()` retries on JSON-parse failure. Provider calls go
+through any-llm's unified completion API. `provider` is passed through to
+any-llm after the compatibility alias `claude -> anthropic` is applied.
+`_extract_and_repair()` strips code fences and runs `json_repair`.
 
 ## Generated-project conventions (encoded in prompts)
 

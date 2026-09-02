@@ -1,6 +1,19 @@
+import re
 from pathlib import PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+_PROJECT_NAME_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def _validate_project_name(value: str) -> str:
+    """Accept the empty sentinel, or one portable lowercase-kebab directory name."""
+    if value == "":
+        return value
+    if _PROJECT_NAME_PATTERN.fullmatch(value) is None:
+        raise ValueError("project name must be a lowercase kebab-case directory name")
+    return value
 
 
 class FileEntry(BaseModel):
@@ -29,6 +42,11 @@ class ProjectManifest(BaseModel):
     base_package: str = Field("", alias="basePackage")
     files: list[FileEntry] = Field(default_factory=list)
 
+    @field_validator("project_name")
+    @classmethod
+    def _reject_unsafe_project_name(cls, value: str) -> str:
+        return _validate_project_name(value)
+
     def file_map(self) -> dict[str, FileEntry]:
         return {f.path: f for f in self.files}
 
@@ -55,6 +73,11 @@ class Delta(BaseModel):
     changed_files: list[FileEntry] = Field(default_factory=list)
     deleted_files: list[str] = Field(default_factory=list)
     explanation: str | None = None  # populated by reviewer/fixer agents
+
+    @field_validator("project_name")
+    @classmethod
+    def _reject_unsafe_project_name(cls, value: str | None) -> str | None:
+        return None if value is None else _validate_project_name(value)
 
 
 class ProblemSpec(BaseModel):
