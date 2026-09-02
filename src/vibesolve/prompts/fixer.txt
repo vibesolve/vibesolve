@@ -440,6 +440,9 @@ These are the rules the generating agents follow — violations cause hard-to-di
   (`@Getter`, `@Setter` — no manual getter/setter/constructor). Field starts null; the solver assigns values.
 - **@PlanningId**: Required for `SolutionManager.analyze()` and multi-threaded solving.
   Must be unique within the class and implement `hashCode()`/`equals()`.
+- **Score analysis fetch policy import**: `ScoreAnalysisFetchPolicy` is in the solver package:
+  `import ai.timefold.solver.core.api.solver.ScoreAnalysisFetchPolicy;`
+  It is NOT in `ai.timefold.solver.core.api.score.analysis`.
 - **Overconstrained problems**: If `allowsUnassigned = true` is set, you MUST add a soft
   constraint penalizing unassigned values — otherwise the solver trivially "solves" by leaving
   everything unassigned.

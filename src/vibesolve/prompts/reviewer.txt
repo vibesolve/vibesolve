@@ -128,6 +128,7 @@ Systematically check each category:
   - `DELETE /api/stop/{jobId}` (stopSolving) — calls `terminateEarly`, fetches the best solution, THEN `jobIdToJob.remove(jobId)` so stopped jobs do not leak — returns the best solution
   - `PUT /api/analyze` (analyze) — accepts solution JSON, returns `ScoreAnalysis`
 - [ ] `SolverStatus` is imported as `import ai.timefold.solver.core.api.solver.SolverStatus;` — NOT referenced as `SolverManager.SolverStatus` (a nested class that does not exist)
+- [ ] `ScoreAnalysisFetchPolicy` is imported from `ai.timefold.solver.core.api.solver.ScoreAnalysisFetchPolicy` — NOT from `ai.timefold.solver.core.api.score.analysis`
 - [ ] Uses `solverManager.solveBuilder()...run()` (NOT the old 3-arg `solve(id, problem, callback)`)
 - [ ] Has the CDI constructor workaround: a no-arg constructor (setting fields to null) PLUS an `@Inject` constructor receiving `SolverManager` and `SolutionManager`
 - [ ] `SolutionManager` is injected (required for the `analyze` endpoint)
