@@ -4,8 +4,7 @@ _PROMPT_DIR = Path(__file__).parent.parent / "prompts"
 
 _PROMPT_FILES: dict[str, str] = {
     "parser": "parser.txt",
-    "model_builder": "model-builder.txt",
-    "constraint_builder": "constraint-builder.txt",
+    "model_constraint_builder": "model-constraint-builder.txt",
     "io": "io.txt",
     "integrator": "integrator.txt",
     "reviewer": "reviewer.txt",

@@ -2,7 +2,7 @@
 
 ## Pipeline
 
-Seven specialized agents run in sequence. Each one owns a single concern and passes a growing project manifest to the next stage.
+Six specialized agents run in sequence. Each one owns a single concern and passes a growing project manifest to the next stage.
 
 ```
 user_input/*.txt
@@ -15,10 +15,8 @@ user_input/*.txt
   (explain → review → update loop)
        │
        ▼
-[Model Builder] ──────────────────────────► domain classes + skeleton pom.xml
-       │
-       ▼
-[Constraint Builder] ─────────────────────► ConstraintProvider
+[Model & Constraint Builder] ─────────────► domain classes, DataGenerator,
+       │                                        ConstraintProvider, skeleton pom.xml
        │
        ▼
    [IO Agent] ───────────────────────────► JsonIO + DataGenerator
@@ -48,8 +46,7 @@ Each agent outputs only the files it added or modified (a **delta**). The orches
 | **Parser** | Free-text problem description | `ProblemSpec` JSON |
 | **User Validator — Explain** _(optional)_ | `ProblemSpec` | Plain-language markdown summary for user review |
 | **User Validator — Update** _(optional, per feedback round)_ | `ProblemSpec` + user feedback | Corrected `ProblemSpec` |
-| **Model Builder** | `ProblemSpec` | Java domain classes + skeleton `pom.xml` |
-| **Constraint Builder** | `ProblemSpec` + manifest | `ConstraintProvider` implementation |
+| **Model & Constraint Builder** | `ProblemSpec` | Java domain classes, `DataGenerator`, `ConstraintProvider`, skeleton `pom.xml` |
 | **IO Agent** | `ProblemSpec` + manifest | `JsonIO` + `DataGenerator` classes |
 | **Integrator** | `ProblemSpec` + manifest | `Main`, REST resource, `solverConfig.xml`, tests, complete `pom.xml` |
 | **Reviewer** | `ProblemSpec` + manifest | Pre-flight fixes (imports, annotations, dependencies) |

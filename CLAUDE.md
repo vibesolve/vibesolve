@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Multi-agent system that generates complete Timefold Solver projects from natural language problem descriptions. Uses OpenAI API with a sequential pipeline (up to 9 agents) where each agent specializes in one aspect of code generation. Generated projects are validated via Docker (Maven compile + execution) and automatically fixed by a feedback loop. An optional interactive user-validation step lets users review and correct the parsed problem spec before code generation begins.
+Multi-agent system that generates complete Timefold Solver projects from natural language problem descriptions. Uses OpenAI API with a sequential pipeline (up to 8 agents) where each agent specializes in one aspect of code generation. Generated projects are validated via Docker (Maven compile + execution) and automatically fixed by a feedback loop. An optional interactive user-validation step lets users review and correct the parsed problem spec before code generation begins.
 
 ## Setup
 
@@ -134,26 +134,24 @@ default_workers: 3
 # Per-agent reasoning effort (low | medium | high). Applies to both
 # providers. --reasoning-effort overrides every agent at once.
 efforts:
-  parser:                  low
-  model_builder:           low
-  constraint_builder:      low
-  io:                      low
-  integrator:              low
-  reviewer:                medium
-  fixer:                   high
-  user_validator_explain:  low
-  user_validator_update:   low
+  parser:                   low
+  model_constraint_builder: low
+  io:                       low
+  integrator:               low
+  reviewer:                 medium
+  fixer:                    high
+  user_validator_explain:   low
+  user_validator_update:    low
 
 models:
-  parser:                  gpt-5-mini
-  model_builder:           gpt-5-mini
-  constraint_builder:      gpt-5-mini
-  io:                      gpt-5-mini
-  integrator:              gpt-5-mini
-  reviewer:                gpt-5-mini
-  fixer:                   gpt-5-mini
-  user_validator_explain:  gpt-5-mini   # --user-validate: generates spec summary
-  user_validator_update:   gpt-5-mini   # --user-validate: applies user feedback
+  parser:                   gpt-5-mini
+  model_constraint_builder: gpt-5-mini
+  io:                       gpt-5-mini
+  integrator:               gpt-5-mini
+  reviewer:                 gpt-5-mini
+  fixer:                    gpt-5-mini
+  user_validator_explain:   gpt-5-mini   # --user-validate: generates spec summary
+  user_validator_update:    gpt-5-mini   # --user-validate: applies user feedback
 ```
 
 Keep `OPENAI_API_KEY` in `.env.local` — never put it in `config.yaml`.
@@ -163,17 +161,17 @@ Keep `OPENAI_API_KEY` in `.env.local` — never put it in `config.yaml`.
 ### Pipeline Flow
 
 ```
-user_input/*.txt → Parser → [User Validator (--user-validate)] → Model Builder → Constraint Builder → IO Agent → Integrator
-                              (explain → review → update loop)                                                        │
-                                                                                                        [Optional] Reviewer
-                                                                                                                      │
-                                                                                                             Docker Validate
-                                                                                                           (mvn compile + exec)
-                                                                                                              │           │
-                                                                                                            Pass        Fail
-                                                                                                              │           │
-                                                                                                       ProjectManifest   Fixer (max N×)
-                                                                                                                         └─▶ Docker Validate
+user_input/*.txt → Parser → [User Validator (--user-validate)] → Model & Constraint Builder → IO Agent → Integrator
+                              (explain → review → update loop)                                                    │
+                                                                                                    [Optional] Reviewer
+                                                                                                                  │
+                                                                                                         Docker Validate
+                                                                                                       (mvn compile + exec)
+                                                                                                          │           │
+                                                                                                        Pass        Fail
+                                                                                                          │           │
+                                                                                                   ProjectManifest   Fixer (max N×)
+                                                                                                                     └─▶ Docker Validate
 ```
 
 Each agent:
@@ -188,8 +186,7 @@ Each agent:
 | **Parser** | Free-text problem description | `ProblemSpec` | `prompts/parser.txt` |
 | **User Validator — Explain** _(optional)_ | `ProblemSpec` | `UserValidationExplanation` (markdown summary) | `prompts/user-validator-explain.txt` |
 | **User Validator — Update** _(optional, per feedback round)_ | `ProblemSpec` + user feedback | Updated `ProblemSpec` | `prompts/user-validator-update.txt` |
-| **Model Builder** | `ProblemSpec` | `Delta` with Java domain model + Timefold annotations | `prompts/model-builder.txt` |
-| **Constraint Builder** | `ProblemSpec` + `ProjectManifest` | `Delta` with ConstraintProvider implementation | `prompts/constraint-builder.txt` |
+| **Model & Constraint Builder** | `ProblemSpec` | `Delta` with Java domain model + Timefold annotations + ConstraintProvider + DataGenerator | `prompts/model-constraint-builder.txt` |
 | **IO Agent** | `ProblemSpec` + `ProjectManifest` | `Delta` with JSON import/export + DataGenerator | `prompts/io.txt` |
 | **Integrator** | `ProblemSpec` + `ProjectManifest` | `Delta` with Main class, REST API, pom.xml, tests | `prompts/integrator.txt` |
 | **Reviewer** | `ProblemSpec` + `ProjectManifest` | `Delta` with pre-flight fixes + `explanation` field | `prompts/reviewer.txt` |

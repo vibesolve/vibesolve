@@ -21,7 +21,7 @@ class _FakeCaller:
         return json.dumps({"problemType": "scheduling"})
 
     def call_typed(self, agent, user_message, model_type):
-        if agent == "model_builder":
+        if agent == "model_constraint_builder":
             return Delta(
                 projectName=self._pn,
                 basePackage="com.example",
@@ -68,7 +68,7 @@ def test_empty_project_name_is_rejected(tmp_path):
         container_name="",
         log_dir=tmp_path / "log",
         results_dir=results_dir,
-        caller_factory=_factory(""),  # model_builder yields an empty projectName
+        caller_factory=_factory(""),  # model_constraint_builder yields an empty projectName
         enable_docker_validation=False,
         serve=False,
     )

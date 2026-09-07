@@ -40,6 +40,28 @@ Systematically check each category:
 ### 0. Constraint Completeness
 - [ ] Every constraint listed in ProblemSpec.constraints has a corresponding, fully-implemented method in the ConstraintProvider's `defineConstraints()` return array. Cross-reference them explicitly: for each entry in ProblemSpec.constraints, locate the method that implements it. If any constraint from the spec is missing from the code, add a correct implementation — do not leave it out.
 - [ ] Every method listed in `defineConstraints()` is a real, fully-implemented constraint — not a stub, dummy, or placeholder. Placeholders (e.g. a constraint that just does `factory.forEach(...).penalize(HardSoftScore.ONE_SOFT).asConstraint("placeholder")`) must be replaced with a correct implementation. A placeholder that compiles is worse than a compile error because it produces silently wrong results.
+- [ ] **No disguised stubs.** A constraint whose stream logic looks correct is still a stub if the value it compares against is invented in code. Search the ConstraintProvider for: `static` maps or fields holding limits/caps/weights; magic numbers such as `1_000_000` or `Integer.MAX_VALUE` used as a default limit; empty loop bodies or empty `if` branches; comments containing "in a real system", "out of scope", "simplified", "for now", "placeholder", "we assume", "not directly available". Each is an unimplemented requirement. Fix it by adding the value as a field on the appropriate problem-fact class, populating it in the DataGenerator, and reading it in the constraint.
+
+### 0a. Objective Completeness (an all-hard provider cannot optimize)
+- [ ] Every entry in `ProblemSpec.objectives` has a corresponding constraint in `defineConstraints()` that rewards or penalizes it. Cross-reference them one by one, exactly as for constraints.
+- [ ] **If `ProblemSpec.objectives` is non-empty, at least one constraint must be non-hard (medium or soft).** Count the `.penalize`/`.reward` calls by level. If every single one is `ONE_HARD`/`ofHard(...)`, the project has no objective function: every feasible solution scores identically and the solver returns an arbitrary one. This is a critical failure — implement the objectives.
+- [ ] Objectives that mention severity, priority, urgency, value, distance or lateness use a match-weight function reading that field, not a flat weight.
+- [ ] **Score tier matches the spec's ranking.** If `ProblemSpec.objectives` is explicitly ordered by priority, or uses wording like "primary/secondary", "more important than", or "medium-priority", the score type must be `HardMediumSoftScore` with coverage objectives at medium and tie-breakers at soft. If the spec has only two tiers, `HardSoftScore` is correct. Whichever it is, it must be identical across the `@PlanningScore` field, every `.penalize`/`.reward` call and the `SolutionManager` generic parameter.
+- [ ] **Dead-data sweep.** For every field on the domain model carrying a weight, priority, severity, due date, target, entitlement, capacity, quantity or standard deviation, find the constraint that reads it. A field no constraint reads is strong evidence that a requirement or objective was dropped. Implement it.
+
+### 0b. Constraint Reachability (silently-dead constraints)
+- [ ] For each `@PlanningEntity`, list its genuine planning variables (`@PlanningVariable`, `@PlanningListVariable`) and note which are `allowsUnassigned = true`.
+- [ ] **If an entity has any `allowsUnassigned = true` variable, every constraint rooted in that entity must use `forEachIncludingUnassigned(...)`, not `forEach(...)` or `forEachUniquePair(...)`.** `forEach()` emits an entity only when all its genuine variables are assigned, so a single perpetually-null variable removes that entity from every constraint in the provider. The result compiles, runs, passes tests and scores `0hard/0soft` on everything. Fix by switching the stream root and adding explicit null guards inside the filters.
+- [ ] Every `allowsUnassigned = true` variable has a constraint that makes the solver want to assign it (a medium-level reward for assigning, or penalty for leaving it null). If none exists, either add it or remove `allowsUnassigned` — an unassigned-capable variable with no score pressure disables the whole provider.
+- [ ] `allowsUnassigned` is not applied defensively. If `ProblemSpec` does not say the value may be left unassigned, remove the flag.
+- [ ] **`@PlanningListVariable` and `allowsUnassignedValues`.** The attribute defaults to `false`, which forces every value in the range into exactly one list. If the ProblemSpec says some values may be left out ("not everything can be scheduled", "select a subset", "demand exceeds capacity", "unassigned entries are expected"), the annotation must set `allowsUnassignedValues = true` and there must be a medium-level reward for values that do get placed. Without both, that requirement is unrepresentable.
+
+### 0c. Constraint Semantics
+- [ ] **No tautologies.** For each constraint, name a concrete assignment of planning variables that would make it match. A constraint that checks a property already guaranteed by a shadow variable's own definition (e.g. penalizing `start != previousEnd + gap` when the shadow supplier computes `start` as exactly `previousEnd + gap`) can never fire. Remove it and implement the requirement it was meant to cover.
+- [ ] **No duplicates.** Two constraints with the same predicate double-penalize the same violation and distort the score. Merge them.
+- [ ] **Tier matches wording.** A requirement the spec words as "prefers", "normally", "where possible", "balance", "minimize" must be soft or medium, never hard. Promoting a preference to hard leaves the variable one legal value and deletes a decision the solver was supposed to make.
+- [ ] **Capacity is not uniqueness.** A constraint enforcing a quantity limit must compare concurrent usage against the quantity field. A check that only rejects a second simultaneous use (i.e. treats every limit as 1) is wrong whenever the limit can exceed 1 — and a check gated on `quantity <= 1` leaves every larger limit entirely unenforced.
+- [ ] **Multiplicity is preserved.** If the spec says an entity requires a *set* of things, a single-reference planning variable cannot represent it. Check that a requirement list on the entity (e.g. `requiredResourceIds`) is actually cross-checked against what was assigned, rather than being written and never read.
 
 ### 1. Package & Import Consistency
 - [ ] All Java files have correct package declarations matching their path
@@ -71,7 +93,7 @@ Systematically check each category:
 ### 3. Type Consistency
 - [ ] Planning variable types match value range provider return types
 - [ ] Constraint stream joins use compatible types
-- [ ] Score type is consistently `HardSoftScore` across the solution `@PlanningScore` field, all `.penalize`/`.reward` calls in the ConstraintProvider, and the SolutionManager generic parameter
+- [ ] Score type is consistent across the solution `@PlanningScore` field, all `.penalize`/`.reward` calls in the ConstraintProvider, and the SolutionManager generic parameter. `HardSoftScore` is the default; `HardMediumSoftScore` is correct when the ProblemSpec ranks its objectives into two tiers above the tie-breakers (see 0a). Do not "normalize" a deliberate `HardMediumSoftScore` back to `HardSoftScore` — make the other files agree with it instead.
 - [ ] Collections use correct generic types
 
 ### 4. POM Dependencies
@@ -250,7 +272,7 @@ private TimeSlot timeSlot;
 1. **Start with pom.xml** - Check all dependencies have versions
 2. **Check Solution class** - Verify annotations and value range providers
 3. **Check Entity classes** - Verify planning variables and Lombok annotations (`@Getter`, `@Setter`, `@NoArgsConstructor`)
-4. **Check ConstraintProvider** - Verify syntax and imports
+4. **Check ConstraintProvider** - Verify syntax and imports, then run the section 0 / 0a / 0b / 0c passes: every spec constraint and every spec objective implemented, at least one non-hard constraint, no disguised stubs, no unreachable streams, no tautologies
 5. **Cross-reference** - Ensure IDs and types match across files
 6. **Check supporting classes** - Data generator, main class, etc.
 
@@ -259,7 +281,7 @@ private TimeSlot timeSlot;
 ## IMPORTANT RULES
 
 1. **Fix issues, don't just report them** - Return corrected code
-2. **Be conservative** - Only fix clear issues, don't refactor working code
+2. **Be conservative on style, not on correctness** - Don't refactor working code for taste. But a missing objective, an all-hard provider, a `forEach()` that can never emit, a hard-coded stand-in for problem data, or a tautological constraint are all clear issues: fix them even though the project compiles.
 3. **Preserve logic** - Don't change business logic, just fix technical issues
 4. **Include ONLY fixed files** - Do NOT repeat files that have no changes
 5. **If no issues found** - Return `{"explanation": "No issues found - code looks correct.", "changed_files": []}`

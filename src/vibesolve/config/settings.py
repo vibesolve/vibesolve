@@ -10,8 +10,7 @@ class AgentModels(BaseModel):
     """OpenAI model names per agent."""
 
     parser: str = "gpt-5-mini"
-    model_builder: str = "gpt-5-mini"
-    constraint_builder: str = "gpt-5-mini"
+    model_constraint_builder: str = "gpt-5-mini"
     io: str = "gpt-5-mini"
     integrator: str = "gpt-5-mini"
     reviewer: str = "gpt-5-mini"
@@ -35,8 +34,7 @@ class AgentEfforts(BaseModel):
     """
 
     parser: EffortLevel = "low"
-    model_builder: EffortLevel = "low"
-    constraint_builder: EffortLevel = "low"
+    model_constraint_builder: EffortLevel = "low"
     io: EffortLevel = "low"
     integrator: EffortLevel = "low"
     reviewer: EffortLevel = "medium"
@@ -56,8 +54,7 @@ class ClaudeAgentModels(BaseModel):
     """
 
     parser: str = "claude-haiku-4-5-20251001"
-    model_builder: str = "claude-haiku-4-5-20251001"
-    constraint_builder: str = "claude-haiku-4-5-20251001"
+    model_constraint_builder: str = "claude-haiku-4-5-20251001"
     io: str = "claude-haiku-4-5-20251001"
     integrator: str = "claude-haiku-4-5-20251001"
     reviewer: str = "claude-sonnet-4-6"
