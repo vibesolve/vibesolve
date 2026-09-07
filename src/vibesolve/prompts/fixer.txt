@@ -64,6 +64,29 @@ Requirements:
 - Check that you haven't introduced new issues
 - Make sure all imports are correct
 
+### 4. NEVER Fix by Weakening the Model
+
+A compiling, running project that no longer implements the problem is a worse outcome than the error you were handed. Compilation pressure must never be paid for out of requirement coverage. These are all forbidden fixes, even when they make the error go away:
+
+- **Deleting or commenting out a constraint** because it is hard to compile. Find a formulation that compiles and still expresses the rule.
+- **Downgrading a constraint to something trivial** — replacing an aggregation with a pairwise check, replacing a real comparison with a null check, replacing a computed limit with a constant. If the stream logic is fighting you, rewrite the stream; do not change what the constraint means.
+- **Hard-coding data the spec says is input.** A `static Map` of caps, an `Integer.MAX_VALUE` default limit, a `buffer = 0` where a configured buffer belongs — these compile perfectly and silently disable the constraint forever. Put the value on the domain class and read it from there.
+- **Leaving an empty loop body or `if` branch** with a comment explaining why the check was skipped. That is an unimplemented constraint, not a fix.
+- **Removing soft or medium constraints** to simplify the score. The non-hard constraints ARE the objective function; without them the solver optimizes nothing.
+- **Changing the score type to drop a level.** If the project uses `HardMediumSoftScore`, that was a deliberate choice about priority tiers — make the other files agree with it rather than collapsing it to `HardSoftScore`.
+- **Adding `allowsUnassigned = true` to silence an "entity has an uninitialized variable" style problem.** That flag changes the problem definition and, worse, removes the entity from every `forEach()` stream in the provider (see below). Fix the value range or the DataGenerator instead.
+
+If you genuinely cannot preserve a requirement while fixing the error, say so explicitly in the `explanation` field. Never make the trade silently.
+
+### 5. Watch for Fixes That Kill the Score
+
+Two changes look harmless and produce a solver that compiles, runs, passes every test and scores `0hard/0soft` on all input:
+
+1. **Adding `allowsUnassigned = true` to a `@PlanningVariable`.** `forEach()` emits an entity only when ALL of its genuine planning variables are assigned. If nothing in the score rewards assigning that variable, the solver leaves it null forever, and `forEach(ThatEntity.class)` — and `forEachUniquePair` on it — returns an empty stream, disabling EVERY constraint rooted in that entity. If you must add the flag, switch those constraints to `forEachIncludingUnassigned(...)` with explicit null guards in the filters, and add a medium-level reward for assigning the variable.
+2. **Adding `allowsUnassignedValues = true` to a `@PlanningListVariable`** without a reward for values that do get placed. The solver will then place nothing at all.
+
+Before returning a delta that touches a planning-variable annotation or a stream root, ask: after this change, can any constraint in the provider still match? If not, the fix is wrong.
+
 ---
 
 ## COMMON ERROR PATTERNS AND FIXES
@@ -532,7 +555,8 @@ Before returning your fix, scan all modified and dependent files for these issue
 - [ ] `@ConstraintProvider` has public `defineConstraints()` returning `Constraint[]`
 
 **Types & Consistency**
-- [ ] Score type is consistently `HardSoftScore` across the solution `@PlanningScore` field, all `.penalize`/`.reward` calls in the ConstraintProvider, and the SolutionManager generic parameter
+- [ ] Score type is consistent (`HardSoftScore` or `HardMediumSoftScore` — whichever the project already uses) across the solution `@PlanningScore` field, all `.penalize`/`.reward` calls in the ConstraintProvider, and the SolutionManager generic parameter. Make the files agree with the existing choice; never collapse `HardMediumSoftScore` to `HardSoftScore` to resolve a mismatch
+- [ ] At least one constraint is non-hard when the ProblemSpec has objectives — a delta that leaves only hard constraints has removed the objective function
 - [ ] Planning variable type matches value range provider return type
 - [ ] No "/" characters in constraint names
 

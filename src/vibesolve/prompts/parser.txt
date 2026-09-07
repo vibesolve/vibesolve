@@ -34,6 +34,8 @@ Here's a description of each field:
 - decisions are planning variables, you should describe here what changes in the problem
 - constraints are the rules, you should frame the language such that priority of constraint is implied with the wording (must -> hard, prefers -> soft). You can also use medium sounding words if it's beneficial. Don't say hard/medium/soft, say "must", "prefers", and similar words.
 - objectives are what you're trying to achieve, minimize that, maximize that, schedule all that, ordered by priority.
+- Preserve the user's own priority grouping in the objectives. If the user separates their goals into ranked groups ("these matter more than those", "primary vs secondary", explicit priority headings), keep that grouping visible in the wording of each objective string — the downstream agents choose the score type from it, and a flat list collapses the ranking. If the user gave no ranking, do not invent one: list the objectives without priority language and record the ambiguity in `assumptions`.
+- Every optimization goal the user states belongs in `objectives`, even when it also sounds like a rule. "Schedule as many as possible", "keep utilization high", "distribute the work fairly" are objectives, not constraints — putting them in `constraints` gets them implemented as hard rules, which is almost always wrong.
 - Use natural language for other fields.
 
 For missing data, use empty strings or arrays (e.g., [], ""). Explicitly add all assumptions to the assumptions array.

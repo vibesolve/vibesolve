@@ -750,6 +750,37 @@ class SolverResourceTest {
 
 ---
 
+## 5c. MANDATORY Solver Integration Test — SolverIntegrationTest.java
+
+You MUST also generate `SolverIntegrationTest.java` at `src/test/java/{{PACKAGE}}/SolverIntegrationTest.java`. It runs the solver standalone via `SolverFactory.createFromXmlResource("solverConfigTest.xml")`.
+
+**What it must assert.** The point of this test is to catch a solver that does nothing. A generated project can compile, run for its full 15 seconds, serve every REST endpoint and still have a ConstraintProvider whose constraints never match a single tuple — in which case every solution scores `0hard/0soft` and the "schedule" it returns is arbitrary. A weak assertion cannot tell that apart from success.
+
+Assert all three of these:
+
+1. **At least one constraint is alive.** Use `SolutionManager` to explain the solved solution and require a non-zero total match count across the provider. This is the assertion that catches a dead ConstraintProvider.
+
+```java
+SolutionManager<MySolution, HardSoftScore> solutionManager = SolutionManager.create(solverFactory);
+ScoreExplanation<MySolution, HardSoftScore> explanation = solutionManager.explain(solution);
+int totalMatches = explanation.getConstraintMatchTotalMap().values().stream()
+        .mapToInt(ConstraintMatchTotal::getConstraintMatchCount)
+        .sum();
+assertTrue(totalMatches > 0,
+        "No constraint matched anything — the ConstraintProvider is inert. "
+        + "Check that forEach() can actually emit the planning entities.");
+```
+
+2. **The score responds to the problem.** Require `solution.getScore()` to be non-null and, on a deliberately over-subscribed or over-constrained instance, hard-negative. A score that stays at `0hard/0soft` no matter what the input looks like means nothing is being measured.
+
+3. **The optimizer has something to optimize.** If the ProblemSpec has objectives, assert that the soft (or medium) component of the score is non-zero on at least one generated instance. An all-hard provider cannot rank solutions.
+
+**What NOT to assert.** `assertTrue(anySomethingWasAssigned)` is not a real test: the construction heuristic assigns variables whether or not the score guides it, and a `@PlanningListVariable` without `allowsUnassignedValues` forces every value into a list unconditionally. Assertions like these pass on a completely broken solver.
+
+Where the domain supports it, also generate a small over-subscribed instance (more demand than capacity) and assert that the solver's answer respects the capacity limits — either by leaving items unassigned, when the model allows that, or by scoring hard-negative when it does not.
+
+---
+
 ## 6. SolverManager API
 
 ```java
