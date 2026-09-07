@@ -20,19 +20,9 @@ from vibesolve.pipeline.user_validator import run_user_validation_loop
 from vibesolve.utils.patch_utils import apply_delta
 from vibesolve.utils import configure_logging, get_run_logger
 
-# Ordered list of (agent_name, input_builder) tuples.
-# input_builder receives (problem_spec, accumulated_manifest) and returns the
-# JSON string to send as the user message. None means use the combined
-# ProblemSpec+ProjectManifest payload (default for all stages after the first).
-_GENERATION_STAGES: list[tuple[str, None]] = [
-    ("model_builder",      None),
-    ("constraint_builder", None),
-    ("io",                 None),
-    ("integrator",         None),
-]
 
-
-def _model_builder_input(spec: ProblemSpec, _manifest: ProjectManifest) -> str:
+def _spec_only_input(spec: ProblemSpec, _manifest: ProjectManifest) -> str:
+    """First generation stage: nothing has been generated yet, so send the spec alone."""
     return json.dumps(spec.to_legacy_dict())
 
 
@@ -45,14 +35,14 @@ def _combined_input(spec: ProblemSpec, manifest: ProjectManifest) -> str:
 
 # Maps agent name → function that builds the user message string
 _INPUT_BUILDERS = {
-    "model_builder": _model_builder_input,
-    "constraint_builder": _combined_input,
+    "model_constraint_builder": _spec_only_input,
     "io": _combined_input,
     "integrator": _combined_input,
 }
 
-# Ordered pipeline stage names
-GENERATION_STAGES = ["model_builder", "constraint_builder", "io", "integrator"]
+# Ordered pipeline stage names. Each stage returns a Delta that is merged into
+# the accumulated ProjectManifest.
+GENERATION_STAGES = ["model_constraint_builder", "io", "integrator"]
 
 
 def _write_manifest(manifest: ProjectManifest, out_dir: Path) -> None:
@@ -86,8 +76,8 @@ def run_problem(
     enable_user_validation: bool = False,
 ) -> ProblemResult:
     """
-    Run the full 5-agent generation pipeline + optional Docker validation
-    for a single input problem.
+    Run the full generation pipeline + optional Docker validation for a
+    single input problem.
 
     Args:
         input_file: Path to the problem description text file.
@@ -140,7 +130,7 @@ def run_problem(
         if enable_user_validation:
             problem_spec = run_user_validation_loop(caller, problem_spec, results_dir, log)
 
-        # 2–5) Sequential generation stages
+        # 2–4) Sequential generation stages
         manifest = ProjectManifest(projectName="", basePackage="", files=[])
 
         for agent in GENERATION_STAGES:

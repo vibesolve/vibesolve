@@ -73,10 +73,10 @@ user_input/*.txt
    │
    ▼   [User Validator — Explain / Update]            ← --user-validate (optional, interactive)
    │
-   ▼   Model Builder      → Delta → ProjectManifest   (domain classes + skeleton pom.xml)
-   ▼   Constraint Builder → Delta → ProjectManifest   (ConstraintProvider)
-   ▼   IO Agent           → Delta → ProjectManifest   (JsonIO)
-   ▼   Integrator         → Delta → ProjectManifest   (Main, REST, solverConfig, tests, full pom.xml)
+   ▼   Model & Constraint Builder → Delta → ProjectManifest   (domain classes, DataGenerator,
+   │                                                           ConstraintProvider, skeleton pom.xml)
+   ▼   IO Agent                   → Delta → ProjectManifest   (JsonIO)
+   ▼   Integrator                 → Delta → ProjectManifest   (Main, REST, solverConfig, tests, full pom.xml)
    │
    ▼   Reviewer            → Delta (pre-flight static fixes; on by default)
    ▼   Docker validate    (mvn clean compile  →  mvn exec:java [timeout 30s]  →  mvn test)
