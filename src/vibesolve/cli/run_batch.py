@@ -108,6 +108,17 @@ def run(
             typer.echo(f"ERROR: No *.txt files found in {input_dir}", err=True)
             raise typer.Exit(code=1)
 
+    # Results, logs and benchmark lookup all use the input filename stem.
+    seen_stems: set[str] = set()
+    for input_file in input_files:
+        if input_file.stem in seen_stems:
+            typer.echo(
+                f"ERROR: Duplicate input name {input_file.stem!r}; use unique filename stems to avoid overwriting batch outputs.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        seen_stems.add(input_file.stem)
+
     n_workers = min(settings.default_workers, len(input_files))
     enable_docker = settings.enable_docker_validation
 
