@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 
 export function stageStreamOptions(model, effort, options = {}) {
@@ -43,14 +44,22 @@ export class PiRuntime {
     this.models = modelRuntime;
     this.emit = emit;
     this.complete = complete ?? modelRuntime.completeSimple.bind(modelRuntime);
+    this.transportSessionId = randomUUID();
+    this.shutdown = new AbortController();
     this.responses = 0;
     this.input = 0;
     this.output = 0;
     this.completionMs = 0;
   }
 
+  // Connections close when the worker process exits.
+  close() {
+    this.shutdown.abort();
+  }
+
   async run(request) {
     try {
+      if (this.shutdown.signal.aborted) throw new Error("Pi runtime is closed");
       if (this.responses >= 70 || this.input >= 1_500_000 || this.output >= 100_000 ||
           this.completionMs >= 1800_000) throw new Error("Pi problem budget exhausted");
       const model = this.models.getModel(request.provider, request.model);
@@ -60,7 +69,11 @@ export class PiRuntime {
       const systemPrompt = native ? request.system : request.system.trimEnd() +
         "\n\nReturn exactly one JSON object matching this JSON Schema. No prose or markdown fences.\n" + JSON.stringify(schema);
       const options = stageStreamOptions(model, request.effort, {
-        signal: AbortSignal.timeout(request.seconds * 1000),
+        signal: AbortSignal.any([this.shutdown.signal, AbortSignal.timeout(request.seconds * 1000)]),
+        sessionId: this.transportSessionId,
+        // Pi maps these shared preferences to each provider's supported behavior.
+        // Plain websocket reuses connections without conversation continuation.
+        transport: "websocket",
         maxRetries: 2,
         onPayload: native ? payload => ({ ...payload, text: { ...payload.text,
           format: { type: "json_schema", name: "response", strict: true, schema },

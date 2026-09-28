@@ -11,6 +11,12 @@ const send = event => {
 };
 const models = await ModelRuntime.create({ allowModelNetwork: false });
 const runtime = new PiRuntime({ modelRuntime: models, emit: send });
+for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.once(signal, () => {
+    try { runtime.close(); }
+    finally { process.exit(code); }
+  });
+}
 const configured = new Set();
 const genericKey = process.env.VIBESOLVE_API_KEY;
 delete process.env.VIBESOLVE_API_KEY;
@@ -32,15 +38,21 @@ async function receive(line) {
   }
   send(await runtime.run(request));
 }
-let pending = Buffer.alloc(0);
-for await (const chunk of process.stdin) {
-  pending = Buffer.concat([pending, chunk]);
-  if (pending.length > MAX_LINE) throw new Error("Pi request exceeds protocol limit");
-  let newline;
-  while ((newline = pending.indexOf(10)) >= 0) {
-    const line = pending.subarray(0, newline).toString("utf8");
-    pending = pending.subarray(newline + 1);
-    await receive(line);
+try {
+  let pending = Buffer.alloc(0);
+  for await (const chunk of process.stdin) {
+    pending = Buffer.concat([pending, chunk]);
+    if (pending.length > MAX_LINE) throw new Error("Pi request exceeds protocol limit");
+    let newline;
+    while ((newline = pending.indexOf(10)) >= 0) {
+      const line = pending.subarray(0, newline).toString("utf8");
+      pending = pending.subarray(newline + 1);
+      await receive(line);
+    }
   }
+  if (pending.length) throw new Error("Incomplete Pi request");
+} finally {
+  runtime.close();
 }
-if (pending.length) throw new Error("Incomplete Pi request");
+// Pi keeps idle connections open; exit rather than wait for them.
+process.exit(0);

@@ -48,6 +48,7 @@ test("a later role or retry never inherits conversation history",async()=>{
   assert.equal(calls[1].context.messages[0].content,"accepted host snapshot");
   assert.equal(calls[1].options.reasoning,"high");
   assert.equal(calls[2].context.messages[0].content,"current IO input");
+  assert(calls.every(c=>c.options.sessionId===runtime.transportSessionId));
 });
 test("strict schema and exact effort reach the real SDK payload without tools",async()=>{
   const {runtime,calls}=fixture();
@@ -65,6 +66,7 @@ test("strict schema and exact effort reach the real SDK payload without tools",a
   assert.equal(captured.text.format.strict,true);
   assert.equal(captured.text.format.schema.additionalProperties,false);
   assert.equal(captured.reasoning.effort,"medium");
+  assert.equal(captured.prompt_cache_key,call.options.sessionId);
   assert(!captured.tools?.length);
 });
 test("other transports get prompt schema, not an agent or tool loop",async()=>{
@@ -114,4 +116,14 @@ test("the problem budget ignores time between completions",async t=>{
   const later=Date.now()+3600_000;
   t.mock.method(Date,"now",()=>later);
   assert((await runtime.run(request())).ok);
+});
+test("close aborts calls and rejects later ones",async()=>{
+  const runtime=new PiRuntime({modelRuntime:{getModel:()=>model},emit:()=>{},
+    complete:async(_model,_context,options)=>{
+      runtime.close();
+      assert(options.signal.aborted);
+      return message({stopReason:"aborted"});
+    }});
+  assert.equal((await runtime.run(request())).ok,false);
+  assert.match((await runtime.run(request({id:2}))).error,/closed/);
 });
