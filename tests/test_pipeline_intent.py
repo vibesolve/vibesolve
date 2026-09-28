@@ -139,3 +139,17 @@ def test_update_failure_stops_generation(tmp_path, monkeypatch):
     assert [agent for agent, _, _ in caller.calls] == ["parser", "user_validator_explain", "user_validator_update"]
     assert json.loads(caller.calls[-1][1])["UserClarifications"] == [correction]
     assert not (tmp_path / "results/ProjectManifest.json").exists()
+
+
+def test_validation_exception_keeps_attempt_route_in_failed_result(tmp_path, monkeypatch):
+    validator = _docker(monkeypatch)
+    validator.validate.side_effect = [
+        ValidationResult(success=False, compilation_output="", runtime_output="Solver error",
+                         exit_code=1, error_phase="runtime"),
+        RuntimeError("validator unavailable"),
+    ]
+    result = _run(tmp_path, _Caller(), docker=True, budget=2)
+    assert not result.success and result.error == "validator unavailable"
+    assert result.fix_iterations == 1
+    assert result.fix_attempts[0].agent == "fixer"
+    assert result.fix_attempts[0].outcome == "pending"

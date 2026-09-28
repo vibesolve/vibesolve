@@ -203,6 +203,8 @@ class FeedbackController:
         Returns:
             (final_manifest, success)
         """
+        self.fix_history = []
+        self.error_phases = []
         if not self._ensure_docker_ready():
             self.log.warning("validation_skipped")
             return initial_manifest, False
@@ -212,8 +214,6 @@ class FeedbackController:
         if self.config.enable_pre_review:
             manifest = self._run_pre_review(problem_spec, manifest)
 
-        self.fix_history = []
-        self.error_phases = []
         prev_manifest: Optional[ProjectManifest] = None
         prev_error_summary: str | None = None
 
@@ -232,6 +232,12 @@ class FeedbackController:
                 self.log.info("incremental_compile")
 
             result = self.validator.validate(manifest.to_legacy_dict(), use_clean=use_clean)
+
+            if self.fix_history:
+                attempt = self.fix_history[-1]
+                attempt.fixed = result.success
+                attempt.outcome = "validation_passed" if result.success else "validation_failed"
+                self.log.info("fixer_outcome", **attempt.model_dump())
 
             if result.success:
                 self.log.info("validation_passed", iteration=validation_iteration)
@@ -254,14 +260,17 @@ class FeedbackController:
             retry_feedback: str | None = None
             while len(self.fix_history) < self.config.max_iterations:
                 fixer_attempt = len(self.fix_history) + 1
-                self.fix_history.append(FixAttempt(
+                agent = "fixer"
+                attempt = FixAttempt(
                     iteration=fixer_attempt,
                     error_phase=result.error_phase,
                     error_summary=error_summary,
                     fixed=False,
-                ))
+                    agent=agent,
+                )
+                self.fix_history.append(attempt)
 
-                self.log.info("calling_fixer", attempt=fixer_attempt)
+                self.log.info("calling_fixer", attempt=fixer_attempt, agent=agent)
                 relevant = self._select_relevant_files(manifest, result)
                 fixer_input = self._build_fixer_input(
                     problem_spec, manifest, result, fixer_attempt,
@@ -269,10 +278,11 @@ class FeedbackController:
                     retry_feedback=retry_feedback,
                 )
                 try:
-                    delta = self.caller.call_typed("fixer", fixer_input, FixerDelta)
+                    delta = self.caller.call_typed(agent, fixer_input, FixerDelta)
                     if delta.explanation:
                         self.log.info("fixer_explanation", explanation=delta.explanation[:200])
                     if not self._has_file_changes(manifest, delta):
+                        attempt.outcome = "no_changes"
                         self.log.warning("fixer_no_changes", attempt=fixer_attempt)
                         retry_feedback = (
                             "Your previous response made no effective file changes. Return a "
@@ -289,8 +299,17 @@ class FeedbackController:
                     )
                     break
                 except Exception as e:
+                    attempt.outcome = "call_failed"
                     self.log.error("fixer_failed", error=str(e))
                     return manifest, False
+                finally:
+                    # Observe the route actually selected by the caller. Do not
+                    # invoke model selection a second time just for telemetry.
+                    model_config = self.caller.last_model_config_for(agent)
+                    if model_config is not None:
+                        attempt.model = model_config.model
+                        attempt.effort = model_config.effort
+                    self.log.info("fixer_outcome", **attempt.model_dump())
             else:
                 self.log.warning("max_iterations_reached", max_iterations=self.config.max_iterations)
                 return manifest, False

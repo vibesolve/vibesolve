@@ -23,6 +23,14 @@ class FixAttempt(BaseModel):
     error_phase: str
     error_summary: str
     fixed: bool
+    agent: str = "fixer"
+    model: str | None = None
+    effort: str | None = None
+    escalated: bool = False
+    outcome: Literal[
+        "pending", "validation_passed", "validation_failed", "no_changes",
+        "call_failed",
+    ] = "pending"
 
 
 class ProblemResult(BaseModel):
@@ -37,6 +45,7 @@ class ProblemResult(BaseModel):
     agent_times: dict[str, float]
     # Per-agent token usage: agent -> {model, input_tokens, cached_input_tokens, output_tokens}
     agent_tokens: dict[str, dict] = Field(default_factory=dict)
+    fix_attempts: list[FixAttempt] = Field(default_factory=list)
     error: str | None = None
 
 

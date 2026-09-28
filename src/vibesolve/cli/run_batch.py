@@ -212,6 +212,7 @@ def run(
             "final_error_phase": r.final_error_phase,
             "agent_times": {k: round(v, 2) for k, v in r.agent_times.items()},
             "agent_tokens": r.agent_tokens,
+            "fix_attempts": [attempt.model_dump() for attempt in r.fix_attempts],
             "error": r.error,
         }
         for r in summary.problem_results

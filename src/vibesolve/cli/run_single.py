@@ -4,6 +4,7 @@ CLI entry point for single-problem pipeline runs.
 Exposes the `run` command, wired up as `vibesolve run` by `cli/main.py`.
 """
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Optional, cast, get_args
@@ -35,7 +36,7 @@ def run(
     ] = None,
     reasoning_effort: Annotated[
         Optional[str],
-        typer.Option("--reasoning-effort", help="Override reasoning effort for ALL agents: auto|none|low|medium|high. Omit to use per-agent config."),
+        typer.Option("--reasoning-effort", help="Override reasoning effort for ALL agents: auto, none, low, medium, high. Omit to use per-agent config."),
     ] = None,
     provider: Annotated[
         Optional[str],
@@ -105,6 +106,10 @@ def run(
     typer.echo(f"Time    : {result.total_time_s:.1f}s  (pipeline {result.pipeline_time_s:.1f}s)")
 
     tokens = aggregate_token_usage([result])
+    results_dir.mkdir(parents=True, exist_ok=True)
+    (results_dir / "RunResult.json").write_text(
+        json.dumps({**result.model_dump(), **tokens}, indent=2), encoding="utf-8",
+    )
     cost = tokens["estimated_cost_usd"]
     cost_str = f"  (~${cost:.4f} API-equivalent estimate)" if cost is not None else "  (cost unknown)"
     typer.echo(
