@@ -25,6 +25,7 @@ def test_run_help_exposes_expected_flags():
     assert "no-validation-loop" in result.output
     assert "serve" in result.output
     assert "user-validate" in result.output
+    assert "auto|none|low|medium|high" in result.output
 
 
 def test_batch_help_exposes_expected_flags():

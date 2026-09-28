@@ -4,13 +4,13 @@ from pathlib import Path
 import structlog
 import typer
 
-from vibesolve.agents.client import AgentCaller
+from vibesolve.agents.base import BaseAgentCaller
 from vibesolve.models.domain import ProblemSpec, UserValidationExplanation
 from vibesolve.utils.intent_context import IntentContext
 
 
 def run_user_validation_loop(
-    caller: AgentCaller,
+    caller: BaseAgentCaller,
     problem_spec: ProblemSpec,
     results_dir: Path,
     log: structlog.BoundLogger,

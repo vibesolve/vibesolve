@@ -12,7 +12,7 @@ from typing import Annotated, List, Optional
 
 import typer
 
-from vibesolve.agents.client import make_caller_factory
+from vibesolve.agents.pi_client import make_caller_factory
 from vibesolve.benchmarking import (
     benchmark_csv_rows,
     benchmark_from_results,
@@ -64,7 +64,7 @@ def run(
     ] = None,
     provider: Annotated[
         Optional[str],
-        typer.Option("--provider", help="LLM provider: openai|claude (default: openai)."),
+        typer.Option("--provider", help="Pi provider name, e.g. openai, openai-codex, anthropic, google. Aliases: claude, gemini, bedrock."),
     ] = None,
     serve: Annotated[
         bool,

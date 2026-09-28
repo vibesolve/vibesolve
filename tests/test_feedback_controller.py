@@ -45,6 +45,7 @@ def _validation(*, success: bool) -> ValidationResult:
 
 
 def _controller(caller: Mock, results: list[ValidationResult]) -> FeedbackController:
+    caller.last_model_config_for.return_value = None
     controller = FeedbackController(
         caller=caller,
         log=Mock(),
@@ -187,6 +188,7 @@ def test_context_survives_noop_retry_and_diagnostic_truncation(tmp_path):
     feedback = "Remove an earlier requirement. " * 400 + "FINAL CORRECTION"
     context = IntentContext(original, [feedback])
     caller = Mock()
+    caller.last_model_config_for.return_value = None
     caller.call_typed.side_effect = [
         FixerDelta(changed_files=[{"path": "src/A.java", "content": "broken"}], deleted_files=[]),
         FixerDelta(changed_files=[{"path": "src/A.java", "content": "fixed"}], deleted_files=[]),

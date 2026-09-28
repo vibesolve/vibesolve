@@ -1,12 +1,15 @@
-"""Pinned Node setup without network or npm."""
+"""Pinned Node setup and caller factory wiring, without network or npm."""
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import structlog
 
-from vibesolve.agents import pi_install
+from vibesolve.agents import pi_client, pi_install
+from vibesolve.config.settings import AppSettings
 
 
 def test_python_and_npm_pi_pins_match_the_lockfile():
@@ -77,3 +80,30 @@ def test_failed_install_never_publishes_a_ready_cache(setup, monkeypatch, tmp_pa
         pi_install.ensure_pi_worker()
     assert not list((tmp_path / "cache").rglob(".ready"))
     assert not list((tmp_path / "cache/vibesolve/pi").iterdir())
+
+
+def test_factory_prepares_once_and_creates_independent_problem_callers(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(pi_client, "ensure_pi_worker", lambda: calls.append("setup") or ("node", "worker.mjs"))
+    settings = AppSettings(_env_file=None, _env_prefix="VIBESOLVE_PI_TEST_", vibesolve_api_key="")
+    create = pi_client.make_caller_factory(settings)
+    first = create(tmp_path / "a", structlog.get_logger())
+    second = create(tmp_path / "b", structlog.get_logger())
+    assert calls == ["setup"]
+    assert first is not second and first.agent_tokens is not second.agent_tokens
+    assert first._worker is second._worker is None  # No subprocess or inference before a role call.
+    first.close()
+    second.close()
+
+
+@pytest.mark.parametrize("parent_value", [None, "parent-fixture-key"])
+def test_factory_loads_native_credentials_without_overriding_environment(tmp_path, monkeypatch, parent_value):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(pi_client, "ensure_pi_worker", lambda: ("node", "worker.mjs"))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    if parent_value:
+        monkeypatch.setenv("OPENAI_API_KEY", parent_value)
+    (tmp_path / ".env.local").write_text("OPENAI_API_KEY=dotenv-fixture-key\n")
+    pi_client.make_caller_factory(AppSettings(_env_file=None, _env_prefix="VIBESOLVE_PI_TEST_", vibesolve_api_key=""))
+    assert os.environ["OPENAI_API_KEY"] == (parent_value or "dotenv-fixture-key")

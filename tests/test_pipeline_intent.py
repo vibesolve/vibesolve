@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from vibesolve.agents.base import BaseAgentCaller
 from vibesolve.models.domain import (
     Delta, FixerDelta, GenerationDelta, ModelBuilderDelta, ProblemSpec,
     UserValidationExplanation,
@@ -22,12 +23,16 @@ def _spec(revision=0):
                        constraints=[], objectives=[], dataRequirements=[], assumptions=[], domainContext=[])
 
 
-class _Caller:
+class _Caller(BaseAgentCaller):
     def __init__(self, fail_at=None):
         self.agent_times, self.agent_tokens = {}, {}
         self.calls = []
         self.updates = 0
         self.fail_at = fail_at
+        self.closed = 0
+
+    def close(self):
+        self.closed += 1
 
     def call_typed(self, agent, message, model_type):
         self.calls.append((agent, message, model_type))
@@ -78,6 +83,7 @@ def test_parser_omission_reaches_every_downstream_role_without_extra_calls(tmp_p
     caller = _Caller()
     result = _run(tmp_path, caller, docker=docker)
     assert result.success, result.error
+    assert caller.closed == 1
     assert [agent for agent, _, _ in caller.calls] == ["parser", *GENERATORS, *(["reviewer", "fixer"] if docker else [])]
     assert caller.calls[0][1] == ORIGINAL
     for agent, message, _ in caller.calls[1:]:
@@ -129,6 +135,7 @@ def test_update_failure_stops_generation(tmp_path, monkeypatch):
     caller = _Caller(fail_at="user_validator_update")
     result = _run(tmp_path, caller, user_validate=True)
     assert not result.success and "failed at user_validator_update" in result.error
+    assert caller.closed == 1
     assert [agent for agent, _, _ in caller.calls] == ["parser", "user_validator_explain", "user_validator_update"]
     assert json.loads(caller.calls[-1][1])["UserClarifications"] == [correction]
     assert not (tmp_path / "results/ProjectManifest.json").exists()

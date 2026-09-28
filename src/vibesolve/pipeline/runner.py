@@ -9,9 +9,8 @@ import json
 import time
 import zipfile
 from pathlib import Path
-from typing import Callable
 
-from vibesolve.agents.client import BaseAgentCaller, make_caller_factory
+from vibesolve.agents.base import AgentCallerFactory
 from vibesolve.packaging import emit_docker_artifacts
 from vibesolve.validation.feedback_controller import FeedbackController, FeedbackConfig
 from vibesolve.models.domain import (
@@ -99,7 +98,7 @@ def run_problem(
     container_name: str,
     log_dir: Path,
     results_dir: Path,
-    caller_factory: Callable,
+    caller_factory: AgentCallerFactory,
     max_fix_iterations: int = 5,
     enable_docker_validation: bool = True,
     serve: bool = False,
@@ -282,3 +281,5 @@ def run_problem(
             agent_tokens=caller.agent_tokens,
             error=error_msg,
         )
+    finally:
+        caller.close()

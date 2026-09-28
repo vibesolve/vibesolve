@@ -16,7 +16,7 @@ from typing import Optional
 
 import structlog
 
-from vibesolve.agents.client import AgentCaller
+from vibesolve.agents.base import BaseAgentCaller
 from vibesolve.validation.docker_validator import DockerValidator, ValidationResult as _DockerValidationResult
 from vibesolve.models.domain import (
     Delta,
@@ -50,7 +50,7 @@ class FeedbackController:
 
     def __init__(
         self,
-        caller: AgentCaller,
+        caller: BaseAgentCaller,
         log: structlog.BoundLogger,
         config: Optional[FeedbackConfig] = None,
         container_name: str = DockerValidator.CONTAINER_NAME,

@@ -56,6 +56,7 @@ class BatchSummary(BaseModel):
     # Token totals across all problems in the batch.
     total_input_tokens: int = 0          # total prompt tokens (includes cached)
     total_cached_input_tokens: int = 0   # subset of input that was a cache hit
+    total_cache_write_tokens: int = 0   # subset of input used to create cache entries
     total_output_tokens: int = 0
     total_tokens: int = 0                # input + output
     estimated_cost_usd: float | None = None  # None if any used model has no price entry
