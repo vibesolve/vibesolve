@@ -3,7 +3,14 @@
 import pytest
 from pydantic import ValidationError
 
-from vibesolve.models.domain import Delta, ProblemSpec, ProjectManifest
+from vibesolve.models.domain import (
+    Delta,
+    FixerDelta,
+    GenerationDelta,
+    ModelBuilderDelta,
+    ProblemSpec,
+    ProjectManifest,
+)
 
 
 def _problem_spec_dict(**overrides):
@@ -29,6 +36,46 @@ def test_delta_accepts_camelcase_aliases():
     assert delta.changed_files[0].path == "p"
 
 
+def test_delta_rejects_unknown_fields():
+    with pytest.raises(ValidationError, match="problemType"):
+        Delta.model_validate({"problemType": "scheduling"})
+
+
+def test_generation_delta_requires_at_least_one_changed_file():
+    for data in ({}, {"changed_files": []}):
+        with pytest.raises(ValidationError, match="at least one changed file"):
+            GenerationDelta.model_validate(data)
+
+    delta = GenerationDelta.model_validate(
+        {"changed_files": [{"path": "pom.xml", "content": "<project />"}]}
+    )
+    assert delta.changed_files[0].path == "pom.xml"
+
+
+def test_model_builder_delta_requires_nonempty_project_metadata():
+    files = [{"path": "pom.xml", "content": "<project />"}]
+
+    with pytest.raises(ValidationError, match="projectName"):
+        ModelBuilderDelta.model_validate({"changed_files": files})
+    with pytest.raises(ValidationError, match="project metadata must not be empty"):
+        ModelBuilderDelta.model_validate(
+            {"projectName": "", "basePackage": "com.example", "changed_files": files}
+        )
+
+    delta = ModelBuilderDelta.model_validate(
+        {"projectName": "demo", "basePackage": "com.example", "changed_files": files}
+    )
+    assert delta.project_name == "demo"
+    assert delta.base_package == "com.example"
+
+
+def test_delta_schemas_have_no_min_items():
+    # Validators enforce non-empty file lists; strict provider schemas reject minItems.
+    for model in (GenerationDelta, FixerDelta):
+        properties = model.model_json_schema(by_alias=True)["properties"]
+        assert "minItems" not in properties["changed_files"]
+
+
 @pytest.mark.parametrize(
     "project_name",
     ["../escape", "nested/project", "/tmp/escape", ".", "two words", "MixedCase"],
@@ -45,6 +92,24 @@ def test_project_models_accept_empty_sentinel_and_kebab_names():
     assert ProjectManifest(projectName="delivery-scheduler").project_name == "delivery-scheduler"
     assert Delta().project_name is None
     assert Delta(projectName="delivery-scheduler").project_name == "delivery-scheduler"
+
+
+def test_fixer_delta_requires_at_least_one_file_operation():
+    with pytest.raises(ValidationError, match="at least one changed or deleted file"):
+        FixerDelta.model_validate({"changed_files": [], "deleted_files": []})
+
+    changed = FixerDelta.model_validate(
+        {
+            "changed_files": [{"path": "src/A.java", "content": "fixed"}],
+            "deleted_files": [],
+        }
+    )
+    deleted = FixerDelta.model_validate(
+        {"changed_files": [], "deleted_files": ["src/Obsolete.java"]}
+    )
+
+    assert changed.changed_files[0].path == "src/A.java"
+    assert deleted.deleted_files == ["src/Obsolete.java"]
 
 
 def test_problemspec_aliases_and_domain_context_round_trip():

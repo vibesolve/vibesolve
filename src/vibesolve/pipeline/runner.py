@@ -14,7 +14,12 @@ from typing import Callable
 from vibesolve.agents.client import BaseAgentCaller, make_caller_factory
 from vibesolve.packaging import emit_docker_artifacts
 from vibesolve.validation.feedback_controller import FeedbackController, FeedbackConfig
-from vibesolve.models.domain import Delta, ProblemSpec, ProjectManifest
+from vibesolve.models.domain import (
+    GenerationDelta,
+    ModelBuilderDelta,
+    ProblemSpec,
+    ProjectManifest,
+)
 from vibesolve.models.results import ProblemResult
 from vibesolve.pipeline.user_validator import run_user_validation_loop
 from vibesolve.utils.patch_utils import apply_delta
@@ -158,7 +163,8 @@ def run_problem(
 
         for agent in GENERATION_STAGES:
             user_msg = _INPUT_BUILDERS[agent](problem_spec, manifest)
-            delta = caller.call_typed(agent, user_msg, Delta)
+            delta_type = ModelBuilderDelta if agent == "model_builder" else GenerationDelta
+            delta = caller.call_typed(agent, user_msg, delta_type)
             manifest = apply_delta(manifest, delta)
             log.info(
                 "stage_complete",
@@ -191,7 +197,7 @@ def run_problem(
                 initial_manifest=manifest,
             )
             fix_iterations = len(controller.fix_history)
-            error_phases = [fa.error_phase for fa in controller.fix_history]
+            error_phases = list(controller.error_phases)
             if error_phases and not validation_success:
                 final_error_phase = error_phases[-1]
         else:
