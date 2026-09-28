@@ -1,5 +1,6 @@
 """Offline regression tests for the Docker validation/fixer loop."""
 
+import json
 from unittest.mock import Mock
 
 from vibesolve.models.domain import (
@@ -9,6 +10,7 @@ from vibesolve.models.domain import (
 )
 from vibesolve.validation.docker_validator import ValidationResult
 from vibesolve.validation.feedback_controller import FeedbackConfig, FeedbackController
+from vibesolve.utils.intent_context import IntentContext
 
 
 def _problem_spec() -> ProblemSpec:
@@ -47,6 +49,7 @@ def _controller(caller: Mock, results: list[ValidationResult]) -> FeedbackContro
         caller=caller,
         log=Mock(),
         config=FeedbackConfig(max_iterations=2, enable_pre_review=False),
+        intent=IntentContext("Fixture request"),
     )
     controller._ensure_docker_ready = Mock(return_value=True)
     controller.validator = Mock()
@@ -177,3 +180,38 @@ def test_deletion_only_fixer_delta_is_applied_and_revalidated():
     assert success
     assert "src/A.java" not in manifest.file_map()
     assert controller.validator.validate.call_count == 2
+
+
+def test_context_survives_noop_retry_and_diagnostic_truncation(tmp_path):
+    original = "Keep the whole user request. " * 500 + "FINAL REQUIREMENT"
+    feedback = "Remove an earlier requirement. " * 400 + "FINAL CORRECTION"
+    context = IntentContext(original, [feedback])
+    caller = Mock()
+    caller.call_typed.side_effect = [
+        FixerDelta(changed_files=[{"path": "src/A.java", "content": "broken"}], deleted_files=[]),
+        FixerDelta(changed_files=[{"path": "src/A.java", "content": "fixed"}], deleted_files=[]),
+    ]
+    controller = FeedbackController(
+        caller=caller, log=Mock(), intent=context,
+        config=FeedbackConfig(max_iterations=2, enable_pre_review=False),
+    )
+    controller._ensure_docker_ready = Mock(return_value=True)
+    controller.validator = Mock()
+    failure = _validation(success=False)
+    failure.compilation_output += "diagnostics" * 2000
+    controller.validator.validate.side_effect = [failure, _validation(success=True)]
+
+    _, success = controller.run(_problem_spec(), _manifest())
+
+    assert success
+    assert caller.call_typed.call_count == 2
+    assert controller.validator.validate.call_count == 2
+    for call in caller.call_typed.call_args_list:
+        payload = json.loads(call.args[1])
+        assert payload["OriginalRequest"] == original
+        assert payload["UserClarifications"] == [feedback]
+        assert payload["ValidationError"]["compilationOutput"] == controller._truncate_output(failure.compilation_output)
+        assert "[TRUNCATED]" in payload["ValidationError"]["compilationOutput"]
+    retried = json.loads(caller.call_typed.call_args_list[-1].args[1])
+    assert "made no effective file changes" in retried["FixerFeedback"]
+    assert retried["ValidationError"]["iteration"] == 2

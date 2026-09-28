@@ -6,6 +6,7 @@ import typer
 
 from vibesolve.agents.client import AgentCaller
 from vibesolve.models.domain import ProblemSpec, UserValidationExplanation
+from vibesolve.utils.intent_context import IntentContext
 
 
 def run_user_validation_loop(
@@ -13,13 +14,16 @@ def run_user_validation_loop(
     problem_spec: ProblemSpec,
     results_dir: Path,
     log: structlog.BoundLogger,
+    *,
+    context: IntentContext,
 ) -> ProblemSpec:
     """Interactive loop that lets the user review and correct the ProblemSpec.
 
     Generates a plain-language markdown explanation, writes it to
     results_dir/problem-spec-review.md, prompts the user to accept or provide
     feedback, and applies any feedback via the update agent. Repeats until the
-    user accepts.
+    user accepts. Keep exact feedback alongside the spec, including requirements
+    that an update agent might omit.
     """
     md_path = results_dir / "problem-spec-review.md"
     iteration = 0
@@ -29,7 +33,7 @@ def run_user_validation_loop(
 
         explanation = caller.call_typed(
             "user_validator_explain",
-            json.dumps(problem_spec.to_legacy_dict()),
+            json.dumps({**problem_spec.to_legacy_dict(), **context.fields()}),
             UserValidationExplanation,
         )
         md_path.write_text(explanation.markdown, encoding="utf-8")
@@ -49,9 +53,11 @@ def run_user_validation_loop(
             return problem_spec
 
         log.info("user_validation_feedback_received", iteration=iteration)
+        context.clarifications.append(feedback)
         user_msg = json.dumps({
             "problem_spec": problem_spec.to_legacy_dict(),
             "user_feedback": feedback,
+            **context.fields(),
         })
         problem_spec = caller.call_typed("user_validator_update", user_msg, ProblemSpec)
         log.info("user_validation_spec_updated", iteration=iteration)

@@ -1,9 +1,8 @@
-from types import SimpleNamespace
-
 import structlog
 
 from vibesolve.models.domain import ProblemSpec, UserValidationExplanation
 from vibesolve.pipeline.user_validator import run_user_validation_loop
+from vibesolve.utils.intent_context import IntentContext
 
 
 def _problem_spec(problem_type: str) -> ProblemSpec:
@@ -38,14 +37,18 @@ def test_user_validation_update_uses_typed_retry_path(monkeypatch, tmp_path):
     monkeypatch.setattr("typer.prompt", lambda *_args, **_kwargs: next(prompts))
     monkeypatch.setattr("typer.echo", lambda *_args, **_kwargs: None)
 
+    spec = _problem_spec("scheduling")
+    context = IntentContext("Schedule shifts")
     updated = run_user_validation_loop(
         FakeCaller(),
-        _problem_spec("scheduling"),
+        spec,
         tmp_path,
         structlog.get_logger(),
+        context=context,
     )
 
     assert updated.problem_type == "updated_scheduling"
+    assert context.clarifications == ["change the problem"]
     assert calls == [
         ("user_validator_explain", UserValidationExplanation),
         ("user_validator_update", ProblemSpec),

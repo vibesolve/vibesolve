@@ -25,6 +25,7 @@ from vibesolve.models.domain import (
     ProjectManifest,
 )
 from vibesolve.models.results import FixAttempt
+from vibesolve.utils.intent_context import IntentContext
 from vibesolve.utils.patch_utils import apply_delta
 
 
@@ -54,11 +55,14 @@ class FeedbackController:
         config: Optional[FeedbackConfig] = None,
         container_name: str = DockerValidator.CONTAINER_NAME,
         error_log_path: Optional[Path] = None,
+        *,
+        intent: IntentContext,
     ) -> None:
         self.caller = caller
         self.log = log
         self.config = config or FeedbackConfig()
         self.error_log_path = error_log_path
+        self.intent = intent
         # DockerValidator still uses a plain callable; bridge via a lambda
         self.validator = DockerValidator(
             container_name=container_name,
@@ -103,7 +107,7 @@ class FeedbackController:
         if retry_feedback is not None:
             fixer_input["FixerFeedback"] = retry_feedback
 
-        return json.dumps(fixer_input, indent=2)
+        return json.dumps({**fixer_input, **self.intent.fields()}, indent=2)
 
     def _truncate_output(self, output: str, max_chars: int = 8000) -> str:
         if len(output) <= max_chars:
@@ -169,6 +173,7 @@ class FeedbackController:
         reviewer_input = json.dumps({
             "ProblemSpec": problem_spec.to_legacy_dict(),
             "ProjectManifest": manifest.to_legacy_dict(),
+            **self.intent.fields(),
         }, indent=2)
 
         try:
