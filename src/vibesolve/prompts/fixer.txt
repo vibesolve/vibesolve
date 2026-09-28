@@ -70,6 +70,9 @@ Requirements:
 
 ### Compilation Errors
 
+**Quarkus bootstrap overload mismatch:**
+`Quarkus.run(SomeApplication.class, args)` requires a class implementing `QuarkusApplication`. For an existing bootstrap-only launcher, the minimal repair is `Quarkus.run(args)`. Quarkus otherwise supplies the REST entry point automatically; a missing custom launcher is not an error. Keep the standalone solver Main selected by exec-maven-plugin, never by `quarkus.package.main-class` or `@QuarkusMain`. Preserve explicitly requested custom startup logic rather than removing it.
+
 **Missing import:**
 ```
 error: cannot find symbol

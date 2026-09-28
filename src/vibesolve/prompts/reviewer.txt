@@ -75,6 +75,7 @@ Systematically check each category:
 - [ ] Collections use correct generic types
 
 ### 4. POM Dependencies
+- [ ] Quarkus supplies its own REST entry point; do not add a custom launcher merely because none exists. Keep the standalone solver Main selected only by exec-maven-plugin, not by `quarkus.package.main-class` or `@QuarkusMain`. An existing bootstrap-only launcher may use `Quarkus.run(args)`; `Quarkus.run(SomeApplication.class, args)` requires that class to implement `QuarkusApplication`. Preserve any explicitly requested custom startup logic.
 - [ ] All required dependencies present (versions managed by BOM — no manual versions needed for Timefold/Quarkus if BOM is imported):
   - `ai.timefold.solver:timefold-solver-quarkus` (NOT `timefold-solver-core`)
   - `ai.timefold.solver:timefold-solver-quarkus-jackson`
