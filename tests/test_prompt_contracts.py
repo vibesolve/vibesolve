@@ -15,6 +15,7 @@ from vibesolve.models.domain import (
     ("model_builder", ModelBuilderDelta),
     ("constraint_builder", GenerationDelta),
     ("io", GenerationDelta),
+    ("integrator", GenerationDelta),
 ])
 def test_delta_instructions_cover_required_wire_fields_without_toy_files(role, model):
     prompt = load_prompt(role)
@@ -52,6 +53,30 @@ def test_domain_checks_allow_named_local_ranges_and_shadow_entities(role):
     assert "scope" in prompt.lower()
 
 
+def test_rest_acceptance_uses_native_bytes_and_requires_completion():
+    prompt = load_prompt("integrator")
+    assert '.get(BASE + "/generate")' in prompt
+    assert ".body(generatedJson)" in prompt
+    assert ".body(solutionJson)" in prompt
+    assert "assertTrue(completed" in prompt
+    assert "assertEquals(score, HardSoftScore.parseScore(analyzedScore))" in prompt
+    assert ".computeIfPresent(" in prompt
+    assert "import java.util.ArrayList;" in prompt
+    assert "/schedule/solve" not in prompt
+    assert "complement(...)` in constraint streams — does not exist" not in prompt
+    assert "Neither implements" not in prompt
+
+
+@pytest.mark.parametrize("role", [
+    "integrator",
+])
+def test_constraint_verifier_single_rule_and_whole_score_are_distinct(role):
+    prompt = load_prompt(role)
+    assert "penalizesBy" in prompt and "scores()" in prompt
+    assert "instance method" in prompt.lower()
+    assert "(provider, factory) -> Provider.rule(factory)" in prompt
+
+
 def test_pair_selection_starts_at_the_factory():
     assert "factory.forEachUniquePair(...).filter(...)" in load_prompt("constraint_builder")
     assert "ListVariableListener for list-variable sources" in load_prompt("model_builder")
@@ -66,3 +91,12 @@ def test_relationship_fact_cloning_is_not_confused_with_json_identity(role):
     assert "@DeepPlanningClone" in prompt
     assert "declared" in prompt and "fact" in prompt
     assert "JSON identity" in prompt or "@JsonIdentityInfo" in prompt
+
+
+@pytest.mark.parametrize("role", [
+    "integrator",
+])
+def test_constraint_verifier_import_and_solution_type_are_explicit(role):
+    prompt = load_prompt(role)
+    assert "ai.timefold.solver.test.api.score.stream.ConstraintVerifier" in prompt
+    assert "<Provider, Solution>" in prompt
