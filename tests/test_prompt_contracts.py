@@ -29,6 +29,21 @@ def test_delta_instructions_cover_required_wire_fields_without_toy_files(role, m
     assert "~~~json" not in prompt
 
 
+@pytest.mark.parametrize("role", ["parser", "user_validator_update"])
+def test_spec_field_meanings_match_the_schema(role):
+    prompt = load_prompt(role)
+    for field in ProblemSpec.model_json_schema(by_alias=True)["required"]:
+        assert field in prompt
+
+
+def test_optional_review_instructions_stay_in_their_roles():
+    assert "material discrepancies" in load_prompt("user_validator_explain")
+    assert "superseded rule" in load_prompt("user_validator_update")
+    for role in ["model_builder", "constraint_builder", "io", "integrator", "reviewer", "fixer"]:
+        assert "User-validator explanations" not in load_prompt(role)
+        assert "User-validator updates" not in load_prompt(role)
+
+
 def test_repair_preserves_fixed_data_and_integration_binds_solver_type():
     assert "fixed input facts even if infeasible" in load_prompt("fixer")
     prompt = load_prompt("integrator")
@@ -38,14 +53,8 @@ def test_repair_preserves_fixed_data_and_integration_binds_solver_type():
 
 
 @pytest.mark.parametrize("role", [
-    "model_builder",
-    "constraint_builder",
-    "io",
-    "integrator",
-    "reviewer",
-    "fixer",
-    "user_validator_explain",
-    "user_validator_update",
+    "model_builder", "constraint_builder", "io", "integrator", "reviewer",
+    "fixer", "user_validator_explain", "user_validator_update",
 ])
 def test_requirement_authority_and_objectives_reach_every_role(role):
     prompt = load_prompt(role)
@@ -54,11 +63,7 @@ def test_requirement_authority_and_objectives_reach_every_role(role):
     assert "authoritative rules to implement remain" not in prompt
 
 
-@pytest.mark.parametrize("role", [
-    "constraint_builder",
-    "reviewer",
-    "fixer",
-])
+@pytest.mark.parametrize("role", ["constraint_builder", "reviewer", "fixer"])
 def test_constraint_api_and_zero_assignment_guidance(role):
     prompt = load_prompt(role)
     assert "complement" in prompt and "zero" in prompt
@@ -70,11 +75,7 @@ def test_constraint_api_and_zero_assignment_guidance(role):
     assert "@ConstraintProvider" not in prompt
 
 
-@pytest.mark.parametrize("role", [
-    "model_builder",
-    "reviewer",
-    "fixer",
-])
+@pytest.mark.parametrize("role", ["model_builder", "reviewer", "fixer"])
 def test_domain_checks_allow_named_local_ranges_and_shadow_entities(role):
     prompt = load_prompt(role)
     assert "entity-local" in prompt
@@ -123,11 +124,13 @@ def test_reviewer_does_not_deadlock_termination_against_callbacks():
     assert "termination can wait for those callbacks to finish" in prompt
 
 
-@pytest.mark.parametrize("role", [
-    "integrator",
-    "reviewer",
-    "fixer",
-])
+def test_prompt_size_budget_prevents_reintroducing_the_reference_catalogue():
+    roles = ["parser", "model_builder", "constraint_builder", "io", "integrator", "reviewer"]
+    assert sum(len(load_prompt(role).encode()) for role in roles) < 65_000
+    assert len(load_prompt("constraint_builder").encode()) < 15_000
+
+
+@pytest.mark.parametrize("role", ["integrator", "reviewer", "fixer"])
 def test_constraint_verifier_single_rule_and_whole_score_are_distinct(role):
     prompt = load_prompt(role)
     assert "penalizesBy" in prompt and "scores()" in prompt
@@ -140,12 +143,7 @@ def test_pair_selection_starts_at_the_factory():
     assert "ListVariableListener for list-variable sources" in load_prompt("model_builder")
 
 
-@pytest.mark.parametrize("role", [
-    "model_builder",
-    "constraint_builder",
-    "reviewer",
-    "fixer",
-])
+@pytest.mark.parametrize("role", ["model_builder", "constraint_builder", "reviewer", "fixer"])
 def test_relationship_fact_cloning_is_not_confused_with_json_identity(role):
     prompt = load_prompt(role)
     assert "@DeepPlanningClone" in prompt
@@ -153,11 +151,7 @@ def test_relationship_fact_cloning_is_not_confused_with_json_identity(role):
     assert "JSON identity" in prompt or "@JsonIdentityInfo" in prompt
 
 
-@pytest.mark.parametrize("role", [
-    "integrator",
-    "reviewer",
-    "fixer",
-])
+@pytest.mark.parametrize("role", ["integrator", "reviewer", "fixer"])
 def test_constraint_verifier_import_and_solution_type_are_explicit(role):
     prompt = load_prompt(role)
     assert "ai.timefold.solver.test.api.score.stream.ConstraintVerifier" in prompt
