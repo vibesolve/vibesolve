@@ -42,9 +42,11 @@ vibesolve = "vibesolve.cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+namespaces = false
 
 [tool.setuptools.package-data]
 "vibesolve" = ["prompts/*.txt"]
+"vibesolve.pi_worker" = ["worker.mjs", "runtime.mjs", "package.json", "package-lock.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

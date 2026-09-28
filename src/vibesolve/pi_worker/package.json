@@ -1,0 +1,19 @@
+{
+  "name": "vibesolve-pi-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test *.test.mjs" },
+  "engines": { "node": ">=22.19.0" },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2"
+  },
+  "overrides": {
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-agent-core": "0.84.2",
+    "@earendil-works/pi-client": "0.84.2",
+    "@earendil-works/pi-protocol": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2"
+  }
+}

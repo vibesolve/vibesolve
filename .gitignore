@@ -16,6 +16,9 @@ dist/
 build/
 .eggs/
 
+# Pi worker dependencies
+node_modules
+
 # Logs and results
 logs/
 results/
