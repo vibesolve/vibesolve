@@ -13,6 +13,7 @@ from vibesolve.models.domain import (
 
 @pytest.mark.parametrize("role,model", [
     ("model_builder", ModelBuilderDelta),
+    ("constraint_builder", GenerationDelta),
     ("io", GenerationDelta),
 ])
 def test_delta_instructions_cover_required_wire_fields_without_toy_files(role, model):
@@ -22,6 +23,20 @@ def test_delta_instructions_cover_required_wire_fields_without_toy_files(role, m
         assert field in prompt
     assert "complete" in prompt and "JSON Delta" in prompt
     assert "~~~json" not in prompt
+
+
+@pytest.mark.parametrize("role", [
+    "constraint_builder",
+])
+def test_constraint_api_and_zero_assignment_guidance(role):
+    prompt = load_prompt(role)
+    assert "complement" in prompt and "zero" in prompt
+    assert "groupBy" in prompt and "Uni" in prompt
+    assert "flattenLast" in prompt
+    assert "interface" in prompt
+    assert "join each aggregate in separately" not in prompt
+    assert "THIS IS THE MAXIMUM" not in prompt
+    assert "@ConstraintProvider" not in prompt
 
 
 @pytest.mark.parametrize("role", [
@@ -37,8 +52,14 @@ def test_domain_checks_allow_named_local_ranges_and_shadow_entities(role):
     assert "scope" in prompt.lower()
 
 
+def test_pair_selection_starts_at_the_factory():
+    assert "factory.forEachUniquePair(...).filter(...)" in load_prompt("constraint_builder")
+    assert "ListVariableListener for list-variable sources" in load_prompt("model_builder")
+
+
 @pytest.mark.parametrize("role", [
     "model_builder",
+    "constraint_builder",
 ])
 def test_relationship_fact_cloning_is_not_confused_with_json_identity(role):
     prompt = load_prompt(role)
