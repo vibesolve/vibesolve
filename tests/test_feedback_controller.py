@@ -215,3 +215,34 @@ def test_context_survives_noop_retry_and_diagnostic_truncation(tmp_path):
     retried = json.loads(caller.call_typed.call_args_list[-1].args[1])
     assert "made no effective file changes" in retried["FixerFeedback"]
     assert retried["ValidationError"]["iteration"] == 2
+
+
+def test_compile_repair_includes_domain_contracts_and_complete_path_inventory():
+    controller = _controller(Mock(), [])
+    manifest = ProjectManifest(projectName="demo", basePackage="com.example", files=[
+        {"path": "pom.xml", "content": "<project/>"},
+        {"path": "src/main/java/com/example/solver/Rules.java", "content": "broken"},
+        {"path": "src/main/java/com/example/domain/Task.java", "content": "class Task {}"},
+        {"path": "src/main/java/com/example/rest/SolverResource.java", "content": "rest"},
+    ])
+    failure = _validation(success=False)
+    failure.compilation_output = "/project/src/main/java/com/example/solver/Rules.java:[8,9] error"
+    relevant = controller._select_relevant_files(manifest, failure)
+    assert set(relevant.file_map()) == {
+        "pom.xml", "src/main/java/com/example/solver/Rules.java",
+        "src/main/java/com/example/domain/Task.java",
+    }
+    payload = json.loads(controller._build_fixer_input(
+        _problem_spec(), manifest, failure, 1, relevant_manifest=relevant,
+    ))
+    assert payload["ProjectFiles"] == [file.path for file in manifest.files]
+    assert len(payload["ProjectManifest"]["files"]) == 3
+    assert len(manifest.files) == 4
+
+
+def test_non_compilation_repair_keeps_full_manifest():
+    controller = _controller(Mock(), [])
+    failure = _validation(success=False)
+    failure.error_phase = "test"
+    manifest = _manifest()
+    assert controller._select_relevant_files(manifest, failure) is manifest

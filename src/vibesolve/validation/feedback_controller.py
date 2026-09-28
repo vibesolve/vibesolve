@@ -94,6 +94,7 @@ class FeedbackController:
         fixer_input = {
             "ProblemSpec": problem_spec.to_legacy_dict(),
             "ProjectManifest": send_manifest.to_legacy_dict(),
+            "ProjectFiles": [file.path for file in manifest.files],
             "ValidationError": {
                 "errorPhase": validation_result.error_phase,
                 "compilationOutput": self._truncate_output(validation_result.compilation_output),
@@ -312,7 +313,7 @@ class FeedbackController:
         manifest: ProjectManifest,
         result: _DockerValidationResult,
     ) -> ProjectManifest:
-        """Return a manifest containing only files relevant to the compilation error."""
+        """Include compiler-mentioned files and the domain contracts they depend on."""
         if result.error_phase != "compilation":
             return manifest
 
@@ -321,6 +322,10 @@ class FeedbackController:
             return manifest
 
         relevant = paths | {"pom.xml"}
+        relevant.update(
+            file.path for file in manifest.files
+            if "/domain/" in file.path and file.path.endswith(".java")
+        )
         filtered = [f for f in manifest.files if f.path in relevant]
         if not filtered:
             return manifest
