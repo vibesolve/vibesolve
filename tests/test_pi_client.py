@@ -122,16 +122,16 @@ def test_truncated_but_parseable_response_is_not_accepted(tmp_path):
 
 
 @pytest.mark.parametrize("effort", ["auto", "none", "low", "medium", "high"])
-def test_roles_keep_configured_model_and_effort(tmp_path, effort):
+def test_cheap_repair_keeps_io_model_and_effort_then_escalates(tmp_path, effort):
     raw = '{"changed_files":[{"path":"A.java","content":"fixed"}],"deleted_files":[]}'
     caller, worker = fixture(tmp_path, [raw, raw], provider_models={
         "openai": {"io": {"model": "cheap-role", "effort": effort},
                    "fixer": {"model": "strong-role", "effort": "high"}},
     })
-    for agent in ["io", "fixer"]:
+    for agent in ["fixer_cheap", "fixer"]:
         caller.call_typed(agent, "{}", FixerDelta)
     assert [(r.model, r.effort) for r in worker.requests] == [("cheap-role", effort), ("strong-role", "high")]
-    assert caller.last_model_config_for("io").model == "cheap-role"
+    assert caller.last_model_config_for("fixer_cheap").model == "cheap-role"
     assert caller.last_model_config_for("parser") is None
     metadata = caller.last_model_config_for("fixer")
     metadata.model = "mutation"
@@ -211,6 +211,52 @@ def test_orchestrator_accepts_deltas_without_caller_snapshot_or_tools(tmp_path):
     manifest = ProjectManifest.model_validate_json((tmp_path / "results/ProjectManifest.json").read_text())
     assert len(manifest.files) == 4
     assert (tmp_path / "results/fixture.zip").is_file()
+
+
+def test_default_pipeline_routes_by_role_and_accounts_for_repairs(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    from vibesolve.reporting.kpi_tracker import aggregate_token_usage
+    from vibesolve.validation.docker_validator import ValidationResult
+    from vibesolve.validation.feedback_controller import FeedbackController
+
+    spec = ProblemSpec(problemType="fixture", entities=[], decisions=[], constraints=[],
+                       objectives=[], dataRequirements=[], assumptions=[], domainContext=[])
+    steps = [spec.model_dump_json(by_alias=True),
+        '{"projectName":"fixture","basePackage":"com.example","changed_files":[{"path":"pom.xml","content":"<project/>"}]}']
+    for role in ["constraint_builder", "io", "integrator"]:
+        steps.append(json.dumps({"changed_files": [{"path": f"src/{role}.java", "content": role}]}))
+    steps.append('{"changed_files":[]}')  # Reviewer.
+    for content in ["cheap fix", "strong fix"]:
+        steps.append(json.dumps({"changed_files": [{"path": "src/constraint_builder.java", "content": content}],
+                                "deleted_files": []}))
+    caller, worker = fixture(tmp_path / "logs", steps, provider_models={})
+    validator = Mock()
+    failure = ValidationResult(success=False, compilation_output="", runtime_output="Solver error",
+                               exit_code=1, error_phase="runtime")
+    validator.validate.side_effect = [failure, failure, ValidationResult(
+        success=True, compilation_output="", runtime_output="", exit_code=0, error_phase="none")]
+    monkeypatch.setattr("vibesolve.validation.feedback_controller.DockerValidator", Mock(return_value=validator))
+    monkeypatch.setattr(FeedbackController, "_ensure_docker_ready", lambda _: True)
+    problem = tmp_path / "problem.txt"
+    problem.write_text("Original requirement")
+    result = run_problem(problem, "test", tmp_path / "logs", tmp_path / "results", lambda _path, _log: caller)
+
+    assert result.success, result.error
+    assert [r.model for r in worker.requests] == [
+        "gpt-5.6-luna", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-luna",
+        "gpt-5.6-terra", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol",
+    ]
+    assert [r.effort for r in worker.requests] == ["medium"] * 7 + ["high"]
+    assert result.fix_iterations == 2 and validator.validate.call_count == 3
+    assert [a.model for a in result.fix_attempts] == ["gpt-5.6-luna", "gpt-5.6-sol"]
+    assert result.fix_attempts[-1].agent == "fixer" and result.fix_attempts[-1].fixed
+    assert worker.closes == 1
+    for request in worker.requests[1:]:
+        assert json.loads(request.user)["OriginalRequest"] == problem.read_text()
+    totals = aggregate_token_usage([result])
+    assert set(totals["tokens_by_model"]) == {"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"}
+    assert totals["total_tokens"] == 8 * 23
+    assert totals["estimated_cost_usd"] == 1.0  # Eight scripted usage records, not model prices.
 
 
 def test_failed_worker_is_replaced_for_the_next_stage(tmp_path, monkeypatch):

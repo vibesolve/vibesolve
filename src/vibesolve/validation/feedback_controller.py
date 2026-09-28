@@ -32,7 +32,7 @@ from vibesolve.utils.patch_utils import apply_delta
 @dataclass
 class FeedbackConfig:
     """Configuration for the feedback loop."""
-    max_iterations: int = 5
+    max_iterations: int = 2
     compile_timeout: int = 300
     runtime_timeout: int = 30
     test_timeout: int = 180
@@ -260,7 +260,7 @@ class FeedbackController:
             retry_feedback: str | None = None
             while len(self.fix_history) < self.config.max_iterations:
                 fixer_attempt = len(self.fix_history) + 1
-                agent = "fixer"
+                agent = "fixer_cheap" if fixer_attempt == 1 else "fixer"
                 attempt = FixAttempt(
                     iteration=fixer_attempt,
                     error_phase=result.error_phase,
@@ -271,6 +271,8 @@ class FeedbackController:
                 self.fix_history.append(attempt)
 
                 self.log.info("calling_fixer", attempt=fixer_attempt, agent=agent)
+                if fixer_attempt == 2:
+                    self.log.info("fixer_escalated", reason=self.fix_history[-2].outcome, agent=agent)
                 relevant = self._select_relevant_files(manifest, result)
                 fixer_input = self._build_fixer_input(
                     problem_spec, manifest, result, fixer_attempt,
@@ -303,13 +305,12 @@ class FeedbackController:
                     self.log.error("fixer_failed", error=str(e))
                     return manifest, False
                 finally:
-                    # Observe the route actually selected by the caller. Do not
-                    # invoke model selection a second time just for telemetry.
                     model_config = self.caller.last_model_config_for(agent)
                     if model_config is not None:
                         attempt.model = model_config.model
                         attempt.effort = model_config.effort
-                    self.log.info("fixer_outcome", **attempt.model_dump())
+                    if attempt.outcome != "pending":  # Otherwise logged after revalidation.
+                        self.log.info("fixer_outcome", **attempt.model_dump())
             else:
                 self.log.warning("max_iterations_reached", max_iterations=self.config.max_iterations)
                 return manifest, False

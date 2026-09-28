@@ -109,7 +109,7 @@ class AppSettings(BaseSettings):
     vibesolve_api_key: str = ""
 
     enable_docker_validation: bool = True
-    max_fix_iterations: int = 10
+    max_fix_iterations: int = Field(default=2, ge=0)
     default_workers: int = Field(default=3, ge=1)
 
     # Model and reasoning-effort configuration keyed by provider name.

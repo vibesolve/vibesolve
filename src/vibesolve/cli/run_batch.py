@@ -60,7 +60,7 @@ def run(
     ] = False,
     max_iterations: Annotated[
         Optional[int],
-        typer.Option("--max-iterations", help="Max fixer iterations per problem."),
+        typer.Option("--max-iterations", min=0, help="Total repair attempts per problem: IO model first, then the fixer model."),
     ] = None,
     provider: Annotated[
         Optional[str],

@@ -27,7 +27,6 @@ def test_run_help_exposes_expected_flags():
     assert "serve" in result.output
     assert "user-validate" in result.output
     assert all(value in result.output for value in ["auto", "none", "low", "medium", "high"])
-    assert "cheap-first-repair" not in result.output
 
 
 def test_batch_help_exposes_expected_flags():
@@ -35,7 +34,6 @@ def test_batch_help_exposes_expected_flags():
     assert result.exit_code == 0
     assert "workers" in result.output
     assert "no-validation-loop" in result.output
-    assert "cheap-first-repair" not in result.output
 
 
 def test_batch_rejects_zero_workers_before_api_setup(tmp_path):
@@ -76,9 +74,9 @@ def test_cli_runs_one_arrangement_and_persists_routes(tmp_path, monkeypatch, com
         return ProblemResult(
             problem_file="request.txt", success=True, total_time_s=0, pipeline_time_s=0,
             validation_time_s=0, fix_iterations=1, error_phases=[], final_error_phase="none",
-            agent_times={}, agent_tokens={"fixer": {"model": "unpriced-test-model", "input_tokens": 17}},
+            agent_times={}, agent_tokens={"fixer_cheap": {"model": "unpriced-test-model", "input_tokens": 17}},
             fix_attempts=[FixAttempt(iteration=1, error_phase="runtime", error_summary="JSON error",
-                                    fixed=True, agent="fixer", model="unpriced-test-model",
+                                    fixed=True, agent="fixer_cheap", model="unpriced-test-model",
                                     effort="medium", outcome="validation_passed")],
         )
 
@@ -96,3 +94,8 @@ def test_cli_runs_one_arrangement_and_persists_routes(tmp_path, monkeypatch, com
     assert problem["fix_attempts"][0]["model"] == "unpriced-test-model"
     assert problem["fix_attempts"][0]["outcome"] == "validation_passed"
 
+
+@pytest.mark.parametrize("command", ["run", "batch"])
+def test_cli_rejects_negative_repair_budget(command):
+    result = runner.invoke(app, [command, "--max-iterations", "-1"])
+    assert result.exit_code == 2

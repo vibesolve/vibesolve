@@ -79,9 +79,10 @@ class PiAgentCaller(BaseAgentCaller):
         roles = self._settings.provider_models.get(provider)
         if roles is None:
             raise ValueError(f"No model configuration for provider={provider!r}.")
-        config = roles.as_dict().get(agent)
+        role = "io" if agent == "fixer_cheap" else agent
+        config = roles.as_dict().get(role)
         if config is None:
-            raise ValueError(f"No configured model for role={agent!r}.")
+            raise ValueError(f"No configured model for role={role!r}.")
         return provider, config.model_copy()
 
     def call_typed(self, agent: str, user_message: str, model_type: type[T]) -> T:

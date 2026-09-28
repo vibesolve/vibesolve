@@ -32,7 +32,7 @@ def run(
     ] = False,
     max_iterations: Annotated[
         Optional[int],
-        typer.Option("--max-iterations", help="Max fixer agent iterations."),
+        typer.Option("--max-iterations", min=0, help="Total repair attempts: IO model first, then the fixer model."),
     ] = None,
     reasoning_effort: Annotated[
         Optional[str],

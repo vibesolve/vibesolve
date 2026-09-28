@@ -99,7 +99,7 @@ def run_problem(
     log_dir: Path,
     results_dir: Path,
     caller_factory: AgentCallerFactory,
-    max_fix_iterations: int = 5,
+    max_fix_iterations: int = 2,
     enable_docker_validation: bool = True,
     serve: bool = False,
     enable_user_validation: bool = False,
@@ -145,6 +145,7 @@ def run_problem(
 
     caller = caller_factory(log_dir, log)
     fix_attempts: list[FixAttempt] = []
+    error_phases: list[str] = []
 
     try:
         raw_problem = input_file.read_text(encoding="utf-8")
@@ -182,7 +183,6 @@ def run_problem(
         # Docker validation + fixer loop
         validation_start = time.time()
         fix_iterations = 0
-        error_phases: list[str] = []
         final_error_phase = "none"
         validation_success = True
 
@@ -204,8 +204,8 @@ def run_problem(
                 )
             finally:
                 fix_attempts = list(controller.fix_history)
+                error_phases = list(controller.error_phases)
             fix_iterations = len(controller.fix_history)
-            error_phases = list(controller.error_phases)
             if error_phases and not validation_success:
                 final_error_phase = error_phases[-1]
         else:
@@ -280,7 +280,7 @@ def run_problem(
             pipeline_time_s=sum(caller.agent_times.values()),
             validation_time_s=0.0,
             fix_iterations=len(fix_attempts),
-            error_phases=[attempt.error_phase for attempt in fix_attempts],
+            error_phases=error_phases,
             final_error_phase="crash",
             agent_times=caller.agent_times,
             agent_tokens=caller.agent_tokens,

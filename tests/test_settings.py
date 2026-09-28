@@ -33,7 +33,7 @@ def test_builtin_defaults(monkeypatch):
     settings = AppSettings()
     assert settings.provider == "openai"
     assert settings.enable_docker_validation is True
-    assert settings.max_fix_iterations == 10
+    assert settings.max_fix_iterations == 2
     assert settings.default_workers == 3
     assert settings.provider_models == _packaged_profiles()
     assert set(settings.provider_models) == {

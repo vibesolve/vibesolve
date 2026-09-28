@@ -39,8 +39,8 @@ provider_models: {}
 # Run Docker validation (mvn compile + mvn exec:java + mvn test) after generation.
 enable_docker_validation: true
 
-# Maximum number of fixer attempts per problem.
-max_fix_iterations: 10
+# Total repair attempts: the IO model first, then the fixer model.
+max_fix_iterations: 2
 
 # Default number of parallel workers for `vibesolve batch`.
 default_workers: 3

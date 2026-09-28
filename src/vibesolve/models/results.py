@@ -26,7 +26,6 @@ class FixAttempt(BaseModel):
     agent: str = "fixer"
     model: str | None = None
     effort: str | None = None
-    escalated: bool = False
     outcome: Literal[
         "pending", "validation_passed", "validation_failed", "no_changes",
         "call_failed",
