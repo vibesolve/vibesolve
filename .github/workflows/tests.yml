@@ -24,6 +24,10 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           python-version: ${{ matrix.python-version }}
+          version: "0.12.7"
+
+      - name: Verify lockfile
+        run: uv lock --check
 
       - name: Install dependencies
         run: uv sync --extra dev
@@ -32,3 +36,17 @@ jobs:
         env:
           TYPER_USE_RICH: "0"
         run: uv run pytest
+
+  pi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+      - name: Install pinned Pi dependencies
+        run: npm ci --prefix src/vibesolve/pi_worker --ignore-scripts
+      - name: Test Pi caller and bundled provider profiles (offline)
+        run: npm test --prefix src/vibesolve/pi_worker

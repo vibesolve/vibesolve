@@ -7,6 +7,17 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  # Pi worker dependencies are lockfile-pinned; update the Pi family together.
+  - package-ecosystem: npm
+    directory: "/src/vibesolve/pi_worker"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      pi:
+        patterns:
+          - "@earendil-works/*"
+
   # Base images in the Docker validator build
   - package-ecosystem: docker
     directory: "/docker"
