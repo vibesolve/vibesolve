@@ -3,12 +3,24 @@
 Integration-level but fully offline: drives run_problem with a fake caller (DI)
 and Docker validation disabled.
 """
-import json
 import zipfile
 from pathlib import Path
 
-from vibesolve.models.domain import Delta
+from vibesolve.models.domain import Delta, ProblemSpec
 from vibesolve.pipeline.runner import run_problem
+
+
+def _problem_spec() -> ProblemSpec:
+    return ProblemSpec(
+        problemType="scheduling",
+        entities=[],
+        decisions=[],
+        constraints=[],
+        objectives=[],
+        dataRequirements=[],
+        assumptions=[],
+        domainContext=[],
+    )
 
 
 class _FakeCaller:
@@ -18,9 +30,13 @@ class _FakeCaller:
         self._pn = project_name
 
     def call(self, agent, user_message):  # parser
-        return json.dumps({"problemType": "scheduling"})
+        return _problem_spec().model_dump_json(by_alias=True)
 
     def call_typed(self, agent, user_message, model_type):
+        if agent == "parser":
+            assert model_type is ProblemSpec
+            return _problem_spec()
+
         if agent == "model_builder":
             return Delta(
                 projectName=self._pn,

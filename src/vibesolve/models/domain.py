@@ -1,7 +1,8 @@
 import re
 from pathlib import PurePosixPath
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 _PROJECT_NAME_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -81,22 +82,28 @@ class Delta(BaseModel):
 
 
 class ProblemSpec(BaseModel):
-    """
-    Typed envelope for the Parser agent output.
+    """Validated, domain-agnostic contract returned by the Parser agent."""
 
-    Fields vary by problem domain, so extra="allow" accepts any additional
-    keys the parser produces without failing validation.
-    """
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    model_config = ConfigDict(extra="allow")
+    problem_type: str = Field(alias="problemType")
+    entities: list[str]
+    decisions: list[str]
+    constraints: list[str]
+    objectives: list[str]
+    data_requirements: list[str] = Field(alias="dataRequirements")
+    assumptions: list[str]
+    domain_context: list[str] = Field(alias="domainContext")
 
-    problem_type: str = Field("", alias="problemType")
-    entities: list = Field(default_factory=list)
-    decisions: list = Field(default_factory=list)
-    constraints: list = Field(default_factory=list)
-    objectives: list = Field(default_factory=list)
-    data_requirements: list = Field(default_factory=list, alias="dataRequirements")
-    assumptions: list = Field(default_factory=list)
+    @model_validator(mode="before")
+    @classmethod
+    def _unwrap_legacy_update_envelope(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        if "problemType" in value or "problem_type" in value:
+            return value
+        wrapped = value.get("problem_spec")
+        return wrapped if isinstance(wrapped, dict) else value
 
     def to_legacy_dict(self) -> dict:
         """Serialize back to camelCase for agent input messages."""

@@ -8,11 +8,12 @@ Your task is to apply the requested changes and return the complete updated spec
 
 Rules:
 1. Only modify what the user explicitly requests. Preserve everything else exactly as-is.
-2. Keep the exact JSON schema of the original (same keys, same camelCase naming: "problemType", "entities", "decisions", "constraints", "objectives", "dataRequirements", "assumptions").
-3. Adding a constraint → append to the "constraints" list, matching the structure of existing entries.
+2. Return exactly these eight camelCase keys: "problemType", "entities", "decisions", "constraints", "objectives", "dataRequirements", "assumptions", "domainContext". Do not add any other keys.
+3. Every array element must be a string. Adding a constraint means appending one complete natural-language string to the "constraints" list.
 4. Removing something → delete only that item from its list.
-5. Renaming or clarifying → update only the relevant name/description field.
-6. Preserve any extra fields that exist in the original spec beyond the standard ones.
-7. Return the full updated ProblemSpec as a complete JSON object — not a diff or delta, the entire object.
+5. Renaming or clarifying → update only the relevant string.
+6. Use "domainContext" only for supporting facts, terminology, definitions, or relationships. Rules, objectives, required inputs, decisions, and entities must remain in their canonical fields.
+7. Preserve all eight fields even when their value is an empty array.
+8. Return the full updated ProblemSpec as a complete JSON object — not a diff or delta, the entire object.
 
 Output: the complete updated ProblemSpec JSON object only. No explanation, no wrapper — just the raw JSON.
