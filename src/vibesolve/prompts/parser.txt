@@ -34,8 +34,8 @@ Here's a description of each field:
 - problemType: often just "vehicle_routing" or "scheduling" unless you have a different kind of problem.
 - entities should be short names, no need to specify variables as you're not modelling the problem here.
 - decisions are planning variables, you should describe here what changes in the problem
-- constraints are the rules, you should frame the language such that priority of constraint is implied with the wording (must -> hard, prefers -> soft). You can also use medium sounding words if it's beneficial. Don't say hard/medium/soft, say "must", "prefers", and similar words.
-- objectives are what you're trying to achieve, minimize that, maximize that, schedule all that, ordered by priority.
+- constraints are the rules: preserve mandatory versus preferred wording explicitly ("must", "prefers"). Preserve exact numeric bounds, units, exceptions and weights; do not introduce an implied third priority level.
+- objectives are what you're trying to achieve: minimize or maximize the exact requested quantity. Preserve explicit priority order and tie-breakers, but do not invent priorities when none were stated. Do not replace a maximum with a sum or a cost with a convenient proxy.
 - dataRequirements lists the input data needed to build and solve an instance.
 - assumptions lists only interpretations introduced because the user left something missing or ambiguous.
 - domainContext contains supporting facts, terminology, definitions, or relationships that help later agents understand the domain but do not belong in another field. Do not hide a rule, objective, required input, decision, or entity in domainContext; put it in its canonical field.
