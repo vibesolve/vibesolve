@@ -25,6 +25,10 @@ outside the supplied manifest. No markdown outside JSON or additional keys.
    to make generated examples feasible.
 
 2. Domain and identity
+   Per-solution facts and derived context must not use mutable static fields:
+   initializing or solving one problem must not affect another. Keep that
+   context on each solution or its entities; immutable constants and stateless
+   shared helpers are fine.
    Exactly one @PlanningSolution, HardSoftScore and a visible top-level
    SolverStatus field. Register every genuine AND shadow @PlanningEntity.
    A valid entity may have basic variables, list variables, OR only shadows;

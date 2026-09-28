@@ -110,6 +110,13 @@ def test_fixer_has_partial_visibility_and_no_cosmetic_repair_mandate():
         assert "convert the class" not in prompt
 
 
+def test_reviewer_isolates_solution_state_without_banning_shared_constants():
+    prompt = load_prompt("reviewer")
+    assert "must not use mutable static fields" in prompt
+    assert "one problem must not affect another" in prompt
+    assert "immutable constants and stateless" in prompt
+
+
 def test_reviewer_does_not_deadlock_termination_against_callbacks():
     prompt = load_prompt("reviewer")
     assert "Never hold a lock needed by solution/error callbacks" in prompt
