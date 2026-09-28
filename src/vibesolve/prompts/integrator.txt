@@ -399,6 +399,10 @@ Generate SolverIntegrationTest. For five small independently generated datasets:
 - If fixed relationship facts reference entities, assertSame those references
   against canonical entities in the SOLVED solution, not just the input graph.
   This catches missing planning-clone support that JSON-only checks cannot fix.
+- Round-trip an existing solved result's exact bytes through the standalone IO
+  class's write/read methods (streams or @TempDir). Assert a non-null score and
+  exact HardSoftScore equality. No clearing scores, test-only ObjectMapper, REST
+  substitute or swallowed errors. Reuse an existing solve.
 - Keep data small so five solves plus REST testing fit the 180-second validator
   test budget. Avoid repeated application startup or additional long solves.
 

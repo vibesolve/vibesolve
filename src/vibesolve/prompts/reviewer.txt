@@ -69,7 +69,9 @@ outside the supplied manifest. No markdown outside JSON or additional keys.
    do not emit only IDs without definitions. Do not silently append forbidden
    values. Ignore entity-reference shadows to avoid cycles, not useful scalar
    shadows merely because they are derived. Keep solverStatus serialized.
-   Both standalone IO and REST must support native generated JSON round trips.
+   Both standalone IO and REST must round-trip native JSON. Require JUnit
+   coverage through the actual IO class with a non-null score and exact
+   HardSoftScore equality after write/read.
 
 5. Build and startup
    Java 17; Quarkus 3.31.2; Timefold 1.31.0; Jakarta imports, never javax.ws.rs.

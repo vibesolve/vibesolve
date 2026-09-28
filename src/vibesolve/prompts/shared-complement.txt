@@ -1,0 +1,5 @@
+## Timefold 1.31.0: complement
+
+Bi<A,B>.complement(Class<A>, Function<A,B>) pads B, not A:
+groupBy(key,count()) needs a -> 0; countLong() needs a -> 0L.
+Preserve correct zero padding; the class must match the key type.

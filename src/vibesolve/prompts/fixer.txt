@@ -125,6 +125,9 @@ files, markdown outside JSON, whole-manifest response or additional keys.
 - REST tests must submit exact /generate JSON to /solve, assert completed status,
   submit exact solution JSON to /analyze and compare initialized scores. Preserve
   those assertions; HTTP 200 alone is not acceptance.
+- Preserve standalone IO tests with a non-null score and exact HardSoftScore
+  equality after write/read. Do not bypass the IO class, clear scores or remove
+  serialization support merely to fix an import/compilation error.
 - ConstraintVerifier single-rule verifyThat(selector).given(...).penalizesBy(n)
   checks match weight; it has NO scores() method. Exact scores belong to the
   whole-provider verifyThat().given(...).scores(HardSoftScore.of(...)) form.
