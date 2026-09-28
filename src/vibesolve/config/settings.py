@@ -84,7 +84,7 @@ class AppSettings(BaseSettings):
     enable_caching: bool = True
     enable_docker_validation: bool = True
     max_fix_iterations: int = 10
-    default_workers: int = 3
+    default_workers: int = Field(default=3, ge=1)
 
     # Per-agent reasoning effort (applies to whichever provider is active)
     efforts: AgentEfforts = Field(default_factory=AgentEfforts)

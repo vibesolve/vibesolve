@@ -32,3 +32,11 @@ def test_batch_help_exposes_expected_flags():
     assert result.exit_code == 0
     assert "workers" in result.output
     assert "no-validation-loop" in result.output
+
+
+def test_batch_rejects_zero_workers_before_api_setup(tmp_path):
+    problem = tmp_path / "problem.txt"
+    problem.write_text("Fixture problem")
+    result = runner.invoke(app, ["batch", str(problem), "--workers", "0"])
+    assert result.exit_code == 2
+    assert "--workers" in result.output
