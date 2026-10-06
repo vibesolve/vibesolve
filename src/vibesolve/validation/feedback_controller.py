@@ -18,8 +18,14 @@ import structlog
 
 from vibesolve.agents.client import AgentCaller
 from vibesolve.validation.docker_validator import DockerValidator, ValidationResult as _DockerValidationResult
-from vibesolve.models.domain import Delta, ProjectManifest, ProblemSpec
+from vibesolve.models.domain import (
+    Delta,
+    FixerDelta,
+    ProblemSpec,
+    ProjectManifest,
+)
 from vibesolve.models.results import FixAttempt
+from vibesolve.utils.intent_context import IntentContext
 from vibesolve.utils.patch_utils import apply_delta
 
 
@@ -49,11 +55,14 @@ class FeedbackController:
         config: Optional[FeedbackConfig] = None,
         container_name: str = DockerValidator.CONTAINER_NAME,
         error_log_path: Optional[Path] = None,
+        *,
+        intent: IntentContext,
     ) -> None:
         self.caller = caller
         self.log = log
         self.config = config or FeedbackConfig()
         self.error_log_path = error_log_path
+        self.intent = intent
         # DockerValidator still uses a plain callable; bridge via a lambda
         self.validator = DockerValidator(
             container_name=container_name,
@@ -63,6 +72,7 @@ class FeedbackController:
             log_func=lambda msg: log.info(msg),
         )
         self.fix_history: list[FixAttempt] = []
+        self.error_phases: list[str] = []
 
     def _build_fixer_input(
         self,
@@ -71,6 +81,7 @@ class FeedbackController:
         validation_result: _DockerValidationResult,
         iteration: int,
         relevant_manifest: Optional[ProjectManifest] = None,
+        retry_feedback: Optional[str] = None,
     ) -> str:
         """Build the input message for the fixer agent."""
         previous_errors = [
@@ -83,6 +94,7 @@ class FeedbackController:
         fixer_input = {
             "ProblemSpec": problem_spec.to_legacy_dict(),
             "ProjectManifest": send_manifest.to_legacy_dict(),
+            "ProjectFiles": [file.path for file in manifest.files],
             "ValidationError": {
                 "errorPhase": validation_result.error_phase,
                 "compilationOutput": self._truncate_output(validation_result.compilation_output),
@@ -93,8 +105,10 @@ class FeedbackController:
                 "previousErrors": previous_errors,
             },
         }
+        if retry_feedback is not None:
+            fixer_input["FixerFeedback"] = retry_feedback
 
-        return json.dumps(fixer_input, indent=2)
+        return json.dumps({**fixer_input, **self.intent.fields()}, indent=2)
 
     def _truncate_output(self, output: str, max_chars: int = 8000) -> str:
         if len(output) <= max_chars:
@@ -160,6 +174,7 @@ class FeedbackController:
         reviewer_input = json.dumps({
             "ProblemSpec": problem_spec.to_legacy_dict(),
             "ProjectManifest": manifest.to_legacy_dict(),
+            **self.intent.fields(),
         }, indent=2)
 
         try:
@@ -198,13 +213,18 @@ class FeedbackController:
             manifest = self._run_pre_review(problem_spec, manifest)
 
         self.fix_history = []
+        self.error_phases = []
         prev_manifest: Optional[ProjectManifest] = None
+        prev_error_summary: str | None = None
 
-        for iteration in range(1, self.config.max_iterations + 1):
+        validation_iteration = 0
+        while True:
+            validation_iteration += 1
             self.log.info(
                 "validation_iteration",
-                iteration=iteration,
-                max_iterations=self.config.max_iterations,
+                iteration=validation_iteration,
+                fixer_attempts=len(self.fix_history),
+                max_fixer_attempts=self.config.max_iterations,
             )
 
             use_clean = (prev_manifest is None) or self._pom_changed(prev_manifest, manifest)
@@ -214,56 +234,66 @@ class FeedbackController:
             result = self.validator.validate(manifest.to_legacy_dict(), use_clean=use_clean)
 
             if result.success:
-                self.log.info("validation_passed", iteration=iteration)
+                self.log.info("validation_passed", iteration=validation_iteration)
                 return manifest, True
 
+            self.error_phases.append(result.error_phase)
             error_summary = self._extract_error_summary(result)
             self.log.warning(
                 "validation_failed",
                 phase=result.error_phase,
                 summary=error_summary[:120],
             )
-            self._log_validation_error(result, iteration)
-
-            self.fix_history.append(FixAttempt(
-                iteration=iteration,
-                error_phase=result.error_phase,
-                error_summary=error_summary,
-                fixed=False,
-            ))
-
-            if self._is_stuck_in_loop():
-                self.log.warning("stuck_in_loop", iteration=iteration)
+            self._log_validation_error(result, validation_iteration)
+            if error_summary == prev_error_summary:
+                self.log.warning("stuck_in_loop", iteration=validation_iteration)
 
             prev_manifest = manifest
+            prev_error_summary = error_summary
 
-            if iteration < self.config.max_iterations:
-                self.log.info("calling_fixer", attempt=iteration)
+            retry_feedback: str | None = None
+            while len(self.fix_history) < self.config.max_iterations:
+                fixer_attempt = len(self.fix_history) + 1
+                self.fix_history.append(FixAttempt(
+                    iteration=fixer_attempt,
+                    error_phase=result.error_phase,
+                    error_summary=error_summary,
+                    fixed=False,
+                ))
+
+                self.log.info("calling_fixer", attempt=fixer_attempt)
                 relevant = self._select_relevant_files(manifest, result)
                 fixer_input = self._build_fixer_input(
-                    problem_spec, manifest, result, iteration,
+                    problem_spec, manifest, result, fixer_attempt,
                     relevant_manifest=relevant,
+                    retry_feedback=retry_feedback,
                 )
                 try:
-                    delta = self.caller.call_typed("fixer", fixer_input, Delta)
+                    delta = self.caller.call_typed("fixer", fixer_input, FixerDelta)
                     if delta.explanation:
                         self.log.info("fixer_explanation", explanation=delta.explanation[:200])
+                    if not self._has_file_changes(manifest, delta):
+                        self.log.warning("fixer_no_changes", attempt=fixer_attempt)
+                        retry_feedback = (
+                            "Your previous response made no effective file changes. Return a "
+                            "different changed_files or deleted_files operation that addresses "
+                            "the validation error."
+                        )
+                        continue
                     manifest = apply_delta(manifest, delta)
                     self.log.info(
                         "fixer_applied",
-                        delta_files=len(delta.changed_files),
+                        changed_files=len(delta.changed_files),
+                        deleted_files=len(delta.deleted_files),
                         total_files=len(manifest.files),
                     )
+                    break
                 except Exception as e:
                     self.log.error("fixer_failed", error=str(e))
-
-        self.log.warning("max_iterations_reached", max_iterations=self.config.max_iterations)
-        return manifest, False
-
-    def _is_stuck_in_loop(self) -> bool:
-        if len(self.fix_history) < 2:
-            return False
-        return self.fix_history[-2].error_summary == self.fix_history[-1].error_summary
+                    return manifest, False
+            else:
+                self.log.warning("max_iterations_reached", max_iterations=self.config.max_iterations)
+                return manifest, False
 
     def _pom_changed(self, prev: ProjectManifest, curr: ProjectManifest) -> bool:
         def get_pom(m: ProjectManifest) -> str:
@@ -273,12 +303,17 @@ class FeedbackController:
             return ""
         return get_pom(prev) != get_pom(curr)
 
+    def _has_file_changes(self, manifest: ProjectManifest, delta: Delta) -> bool:
+        """Return whether a delta would actually add, modify, or delete a file."""
+        updated_files = apply_delta(manifest, delta).file_map()
+        return updated_files != manifest.file_map()
+
     def _select_relevant_files(
         self,
         manifest: ProjectManifest,
         result: _DockerValidationResult,
     ) -> ProjectManifest:
-        """Return a manifest containing only files relevant to the compilation error."""
+        """Include compiler-mentioned files and the domain contracts they depend on."""
         if result.error_phase != "compilation":
             return manifest
 
@@ -287,6 +322,10 @@ class FeedbackController:
             return manifest
 
         relevant = paths | {"pom.xml"}
+        relevant.update(
+            file.path for file in manifest.files
+            if "/domain/" in file.path and file.path.endswith(".java")
+        )
         filtered = [f for f in manifest.files if f.path in relevant]
         if not filtered:
             return manifest

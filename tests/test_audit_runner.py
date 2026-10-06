@@ -3,12 +3,24 @@
 Integration-level but fully offline: drives run_problem with a fake caller (DI)
 and Docker validation disabled.
 """
-import json
 import zipfile
 from pathlib import Path
 
-from vibesolve.models.domain import Delta
+from vibesolve.models.domain import GenerationDelta, ModelBuilderDelta, ProblemSpec
 from vibesolve.pipeline.runner import run_problem
+
+
+def _problem_spec() -> ProblemSpec:
+    return ProblemSpec(
+        problemType="scheduling",
+        entities=[],
+        decisions=[],
+        constraints=[],
+        objectives=[],
+        dataRequirements=[],
+        assumptions=[],
+        domainContext=[],
+    )
 
 
 class _FakeCaller:
@@ -18,16 +30,24 @@ class _FakeCaller:
         self._pn = project_name
 
     def call(self, agent, user_message):  # parser
-        return json.dumps({"problemType": "scheduling"})
+        return _problem_spec().model_dump_json(by_alias=True)
 
     def call_typed(self, agent, user_message, model_type):
+        if agent == "parser":
+            assert model_type is ProblemSpec
+            return _problem_spec()
+
         if agent == "model_builder":
-            return Delta(
+            assert model_type is ModelBuilderDelta
+            return ModelBuilderDelta(
                 projectName=self._pn,
                 basePackage="com.example",
                 changed_files=[{"path": "pom.xml", "content": "<project/>"}],
             )
-        return Delta(changed_files=[])
+        assert model_type is GenerationDelta
+        return GenerationDelta(
+            changed_files=[{"path": f"src/{agent}.txt", "content": agent}]
+        )
 
 
 def _factory(project_name):
@@ -73,9 +93,9 @@ def test_empty_project_name_is_rejected_before_output(tmp_path):
         serve=False,
     )
     assert not res.success, "empty project name should be rejected, not written to results root"
-    assert "no project name" in (res.error or ""), f"failed for an unrelated reason: {res.error}"
-    # the actual point of the finding: nothing collapsed into the results root
-    written = sorted(p.name for p in results_dir.iterdir())
-    assert written == ["ProblemSpec.json", "ProjectManifest.json"], (
-        f"results root polluted with project files: {written}"
+    assert "project metadata must not be empty" in (res.error or ""), (
+        f"failed for an unrelated reason: {res.error}"
     )
+    # The invalid first-stage delta is rejected before any artifacts are written.
+    written = sorted(p.name for p in results_dir.iterdir())
+    assert written == [], f"results root polluted with project files: {written}"

@@ -14,15 +14,21 @@ from typing import Callable
 from vibesolve.agents.client import BaseAgentCaller, make_caller_factory
 from vibesolve.packaging import emit_docker_artifacts
 from vibesolve.validation.feedback_controller import FeedbackController, FeedbackConfig
-from vibesolve.models.domain import Delta, ProblemSpec, ProjectManifest
+from vibesolve.models.domain import (
+    GenerationDelta,
+    ModelBuilderDelta,
+    ProblemSpec,
+    ProjectManifest,
+)
 from vibesolve.models.results import ProblemResult
 from vibesolve.pipeline.user_validator import run_user_validation_loop
 from vibesolve.utils.patch_utils import apply_delta
+from vibesolve.utils.intent_context import IntentContext
 from vibesolve.utils import configure_logging, get_run_logger
 
 # Ordered list of (agent_name, input_builder) tuples.
 # input_builder receives (problem_spec, accumulated_manifest) and returns the
-# JSON string to send as the user message. None means use the combined
+# payload to send as the user message. None means use the combined
 # ProblemSpec+ProjectManifest payload (default for all stages after the first).
 _GENERATION_STAGES: list[tuple[str, None]] = [
     ("model_builder",      None),
@@ -32,18 +38,18 @@ _GENERATION_STAGES: list[tuple[str, None]] = [
 ]
 
 
-def _model_builder_input(spec: ProblemSpec, _manifest: ProjectManifest) -> str:
-    return json.dumps(spec.to_legacy_dict())
+def _model_builder_input(spec: ProblemSpec, _manifest: ProjectManifest) -> dict:
+    return spec.to_legacy_dict()
 
 
-def _combined_input(spec: ProblemSpec, manifest: ProjectManifest) -> str:
-    return json.dumps({
+def _combined_input(spec: ProblemSpec, manifest: ProjectManifest) -> dict:
+    return {
         "ProblemSpec": spec.to_legacy_dict(),
         "ProjectManifest": manifest.to_legacy_dict(),
-    })
+    }
 
 
-# Maps agent name → function that builds the user message string
+# Maps agent name → function that builds the user message payload
 _INPUT_BUILDERS = {
     "model_builder": _model_builder_input,
     "constraint_builder": _combined_input,
@@ -142,24 +148,27 @@ def run_problem(
 
     try:
         raw_problem = input_file.read_text(encoding="utf-8")
+        context = IntentContext(raw_problem)
         log.info("pipeline_start", problem=problem_file)
         pipeline_start = time.time()
 
         # 1) Parser: raw text → ProblemSpec
-        parser_raw = caller.call("parser", raw_problem)
-        problem_spec = ProblemSpec.model_validate_json(parser_raw)
+        problem_spec = caller.call_typed("parser", raw_problem, ProblemSpec)
         log.info("parser_complete", problem_type=problem_spec.problem_type)
 
         # 1b) Optional user validation: review/correct ProblemSpec before generation
         if enable_user_validation:
-            problem_spec = run_user_validation_loop(caller, problem_spec, results_dir, log)
+            problem_spec = run_user_validation_loop(
+                caller, problem_spec, results_dir, log, context=context,
+            )
 
         # 2–5) Sequential generation stages
         manifest = ProjectManifest(projectName="", basePackage="", files=[])
 
         for agent in GENERATION_STAGES:
-            user_msg = _INPUT_BUILDERS[agent](problem_spec, manifest)
-            delta = caller.call_typed(agent, user_msg, Delta)
+            user_msg = json.dumps({**_INPUT_BUILDERS[agent](problem_spec, manifest), **context.fields()})
+            delta_type = ModelBuilderDelta if agent == "model_builder" else GenerationDelta
+            delta = caller.call_typed(agent, user_msg, delta_type)
             manifest = apply_delta(manifest, delta)
             log.info(
                 "stage_complete",
@@ -186,13 +195,14 @@ def run_problem(
                 config=config,
                 container_name=container_name,
                 error_log_path=log_dir / "validation_errors.log",
+                intent=context,
             )
             manifest, validation_success = controller.run(
                 problem_spec=problem_spec,
                 initial_manifest=manifest,
             )
             fix_iterations = len(controller.fix_history)
-            error_phases = [fa.error_phase for fa in controller.fix_history]
+            error_phases = list(controller.error_phases)
             if error_phases and not validation_success:
                 final_error_phase = error_phases[-1]
         else:
