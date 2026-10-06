@@ -10,9 +10,6 @@
     "integrator": {
       "model": "gpt-5.6-terra"
     },
-    "reviewer": {
-      "model": "gpt-5.6-terra"
-    },
     "fixer": {
       "model": "gpt-5.6-sol",
       "effort": "high"
@@ -27,9 +24,6 @@
       "model": "gpt-5.6-terra"
     },
     "integrator": {
-      "model": "gpt-5.6-terra"
-    },
-    "reviewer": {
       "model": "gpt-5.6-terra"
     },
     "fixer": {

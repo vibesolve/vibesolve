@@ -244,7 +244,7 @@ def test_default_pipeline_routes_by_role_and_accounts_for_repairs(tmp_path, monk
     assert result.success, result.error
     assert [r.model for r in worker.requests] == [
         "gpt-5.6-luna", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-luna",
-        "gpt-5.6-terra", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol",
+        "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-luna", "gpt-5.6-sol",
     ]
     assert [r.effort for r in worker.requests] == ["medium"] * 7 + ["high"]
     assert result.fix_iterations == 2 and validator.validate.call_count == 3
