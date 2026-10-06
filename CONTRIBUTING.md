@@ -1,133 +1,62 @@
-# Contributing to VibeSolve
+# Contributing
 
-Thank you for your interest in contributing! This document covers how to set up a development environment, the workflow for submitting changes, and the project's conventions.
+Follow [README.md](README.md) for setup and credentials. For development, install
+the test dependencies with `uv sync --extra dev`. Commands below use `uv run`,
+so activating the virtual environment is optional.
 
-## Prerequisites
-
-- [uv](https://docs.astral.sh/uv/) — install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows)
-- Python 3.11+ (`uv sync` installs a suitable interpreter if you don't have one)
-- Docker (required for validation; skip with `--no-validation-loop` during development)
-- An OpenAI API key (or an Anthropic key, for `--provider claude`)
-
-## Development Setup
+## Checks
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/vibesolve/vibesolve.git
-cd vibesolve
-
-# 2. Create the environment and install the package with dev/test dependencies
-uv sync --extra dev
-
-# 3. Activate it — once per shell; puts `vibesolve` and `pytest` on PATH
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# 4. API key — gitignored, never committed
-cp .env.example .env.local
-# Now open .env.local and set OPENAI_API_KEY=sk-... (add ANTHROPIC_API_KEY for --provider claude)
-
+uv run pytest
+npm ci --prefix src/vibesolve/pi_worker --ignore-scripts
+npm test --prefix src/vibesolve/pi_worker
 ```
 
-> **Docker validator image:** The `timefold-validator` image is built automatically on first use via `build_image_if_needed()` in `docker_validator.py`. You can also build it manually upfront to avoid the wait on first run:
-> ```bash
-> docker build -t timefold-validator docker/
-> ```
-> Rebuild it whenever you change `docker/Dockerfile` or `docker/pom-warmup.xml`.
+These offline checks need neither API keys nor Docker. Python tests cover
+settings, CLI behavior, context, typed calls, merges and repair policy. Node
+tests check SDK payloads, usage, connections, caching and bundled model profiles.
+They use mocked responses, not live model calls or generated projects.
 
-## Running the Pipeline
+Pi upgrades must keep the worker manifest/lockfile and Python's
+`pi_install._PI_VERSION` synchronized; tests enforce this. See
+[PI_CALLER.md](PI_CALLER.md) for Node requirements and caller details.
 
-Activate the environment once per shell (`source .venv/bin/activate`), then:
+For an end-to-end check, start Docker and run:
 
 ```bash
-# start Docker — Linux: sudo systemctl start docker  |  macOS/Windows: launch Docker Desktop
-
-vibesolve run            # the bundled example
-vibesolve run --serve    # also emit a Dockerfile + docker-run.sh
-vibesolve batch          # every *.txt in user_input/, in parallel
+uv run vibesolve run user_input/timetable.txt
 ```
 
-Don't want to activate? Any command also works as `uv run <command>` (e.g. `uv run vibesolve run`, `uv run pytest`) — uv resolves the project environment itself and re-syncs it if `pyproject.toml` changed.
-
-For shell tab-completion, run `vibesolve --install-completion` once (edits your personal shell config).
-
-## CLI reference
-
-CLI flags override `config.yaml` and environment variables. Run `vibesolve run --help` / `vibesolve batch --help` to see this same list.
-
-### `vibesolve run [FILE]`
-
-`FILE` — problem description text file (default: `user_input/timetable.txt`).
-
-| Flag | Default | Description |
-|---|---|---|
-| `--serve` | off | On success, emit `Dockerfile` + `docker-run.sh` into the generated project. |
-| `--user-validate` | off | Pause after parsing to review and correct the spec before code generation. |
-| `--config PATH` | `config.yaml` if present | YAML config file. |
-| `--provider openai\|claude` | `openai` | LLM provider. |
-| `--reasoning-effort low\|medium\|high` | per-agent config | Override reasoning effort for all agents at once. |
-| `--max-iterations N` | `max_fix_iterations` (10) | Max fixer agent iterations. |
-| `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |
-
-### `vibesolve batch [FILES...]`
-
-`FILES` — input problem files (default: all `*.txt` in `--input-dir`).
-
-| Flag | Default | Description |
-|---|---|---|
-| `--input-dir PATH` | `user_input` | Directory to scan for `*.txt` files. |
-| `--serve` | off | Emit `Dockerfile` + `docker-run.sh` into each successfully-generated project. |
-| `--config PATH` | `config.yaml` if present | YAML config file. |
-| `--provider openai\|claude` | `openai` | LLM provider. |
-| `--workers N` | `default_workers` (3) | Number of parallel workers. |
-| `--max-iterations N` | `max_fix_iterations` (10) | Max fixer iterations per problem. |
-| `--no-validation-loop` | off | Skip the Docker validation/fixer loop. |
-
-`batch` has no `--reasoning-effort` or `--user-validate`; `run` has no `--workers` or `--input-dir`.
-
-## Tests
-
-Run the test suite with:
+The validator image builds automatically on first use. Rebuild it after changing
+`docker/Dockerfile` or `docker/pom-warmup.xml`:
 
 ```bash
-pytest
+docker build -t timefold-validator docker/
 ```
 
-The tests are offline — no API key or Docker required — and cover the CLI surface, settings resolution, and the core model/merge logic. Please add or update tests when changing that behavior.
+Use `--no-validation-loop` only to isolate prompt/caller behavior. It does not
+verify compilation, solver execution or tests. See [ARCHITECTURE.md](ARCHITECTURE.md)
+for the pipeline and the separate batch benchmark pass.
 
-## Code Style
+## Changes and review
 
-- **Type annotations:** required on all public functions and methods
-- **Comments:** only when the *why* is non-obvious; avoid restating what the code does
+- Use type annotations on public functions and methods. Explain non-obvious
+  reasons in comments; do not narrate the code.
+- Follow [AGENTS.md](AGENTS.md) for generated-project invariants and source rules.
+  Add/update tests when changing CLI, settings, caller or model/merge behavior.
+- Keep commits focused on one reviewable change, with its tests. Put rationale,
+  verification and known limitations in commit messages and the PR description.
+- For prompt changes, identify affected roles and run an end-to-end problem.
+  For comparisons, keep inputs, model routes, effort and budgets matched;
+  report pass/fail outcomes as well as tokens and estimated cost. Say whether
+  you ran the whole pipeline or resumed from saved outputs. Label estimated
+  costs as estimates. Prompt text assertions do not check generated code.
+- Open a pull request against `master`, describing what changed, why, how it
+  was tested and any unresolved failures. Do not commit experiment outputs or
+  credentials; review logs for sensitive input before sharing evidence.
 
+Report bugs through [GitHub Issues](https://github.com/vibesolve/vibesolve/issues)
+with a minimal input, relevant redacted errors, Python version and OS. Report
+vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
-## Submitting Changes
-
-1. Create a branch from `master` (fork first if you don't have push access):
-   ```bash
-   git checkout -b feat/your-feature-name
-   ```
-2. Keep commits focused — one logical change per commit.
-
-3. **Open a pull request** against `master`. Include in the PR description:
-   - What the change does and why
-   - How you tested it (e.g., which problem input, what output you observed)
-
-## Adding or Modifying Agent Prompts
-
-Agent prompts live in `src/vibesolve/prompts/*.txt`. When modifying a prompt:
-
-- Document your reasoning in the PR description (prompts are hard to review without context)
-- Run the pipeline end-to-end on at least one problem to verify the change doesn't regress output quality
-- Note which agent(s) the prompt serves (see the agent table in [ARCHITECTURE.md](ARCHITECTURE.md))
-
-## Reporting Issues
-
-Please use [GitHub Issues](https://github.com/vibesolve/vibesolve/issues) to report bugs or request features. Include:
-
-- The problem input file (or a minimal reproduction)
-- The full error output from the pipeline log (`logs/run_<timestamp>/pipeline.log`)
-- Your Python version and OS
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the same [MIT](LICENSE) license that covers this project.
+Contributions use the project's [MIT license](LICENSE).
