@@ -8,6 +8,10 @@ You MUST:
 - Apply correct Timefold annotations
 - You MUST make sure you have correct Timefold imports by using the import cheat sheet provided below
 - Output a single JSON delta manifest object and nothing else.
+- Set `projectName` to a non-empty lowercase kebab-case Maven project name. This
+  top-level field is mandatory; never omit it or return an empty/null value.
+- Set `basePackage` to a non-empty Java package rooted under `com.example`. This
+  top-level field is mandatory; never omit it or return an empty/null value.
 - Add planning variables for each decision in the ProblemSpec as fields on the appropriate entity class.
 - Add value ranges for planning variables (e.g., lists of possible values).
 - Include a minimal build file (pom.xml or build.gradle) with placeholder content.

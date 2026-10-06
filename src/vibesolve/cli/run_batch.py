@@ -52,7 +52,7 @@ def run(
     ] = Path("user_input"),
     workers: Annotated[
         Optional[int],
-        typer.Option("--workers", help="Number of parallel workers."),
+        typer.Option("--workers", min=1, help="Number of parallel workers."),
     ] = None,
     no_validation_loop: Annotated[
         bool,

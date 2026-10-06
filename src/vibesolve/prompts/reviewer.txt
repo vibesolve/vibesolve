@@ -75,6 +75,7 @@ Systematically check each category:
 - [ ] Collections use correct generic types
 
 ### 4. POM Dependencies
+- [ ] Quarkus supplies its own REST entry point; do not add a custom launcher merely because none exists. Keep the standalone solver Main selected only by exec-maven-plugin, not by `quarkus.package.main-class` or `@QuarkusMain`. An existing bootstrap-only launcher may use `Quarkus.run(args)`; `Quarkus.run(SomeApplication.class, args)` requires that class to implement `QuarkusApplication`. Preserve any explicitly requested custom startup logic.
 - [ ] All required dependencies present (versions managed by BOM — no manual versions needed for Timefold/Quarkus if BOM is imported):
   - `ai.timefold.solver:timefold-solver-quarkus` (NOT `timefold-solver-core`)
   - `ai.timefold.solver:timefold-solver-quarkus-jackson`
@@ -128,7 +129,9 @@ Systematically check each category:
   - `DELETE /api/stop/{jobId}` (stopSolving) — calls `terminateEarly`, fetches the best solution, THEN `jobIdToJob.remove(jobId)` so stopped jobs do not leak — returns the best solution
   - `PUT /api/analyze` (analyze) — accepts solution JSON, returns `ScoreAnalysis`
 - [ ] `SolverStatus` is imported as `import ai.timefold.solver.core.api.solver.SolverStatus;` — NOT referenced as `SolverManager.SolverStatus` (a nested class that does not exist)
+- [ ] `ScoreAnalysisFetchPolicy` is imported from `ai.timefold.solver.core.api.solver.ScoreAnalysisFetchPolicy` — NOT from `ai.timefold.solver.core.api.score.analysis`
 - [ ] Uses `solverManager.solveBuilder()...run()` (NOT the old 3-arg `solve(id, problem, callback)`)
+- [ ] In Timefold 1.31.0, BOTH `withBestSolutionConsumer(solution -> ...)` and `withBestSolutionEventConsumer(event -> event.solution())` exist. Do not claim either is missing or rewrite a working callback merely to change forms. `SolverFactory` provides `buildSolver().solve(problem)`, not `buildSolverManager()`.
 - [ ] Has the CDI constructor workaround: a no-arg constructor (setting fields to null) PLUS an `@Inject` constructor receiving `SolverManager` and `SolutionManager`
 - [ ] `SolutionManager` is injected (required for the `analyze` endpoint)
 - [ ] `ConcurrentHashMap` is initialized inline as a field: `private final ConcurrentMap<String, Job> jobIdToJob = new ConcurrentHashMap<>();`

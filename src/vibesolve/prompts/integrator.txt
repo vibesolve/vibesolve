@@ -13,7 +13,8 @@ You MUST:
 - Do NOT modify domain model or constraints.
 - Ensure the solverConfig.xml termination is always 15 seconds.
 - Ensure Quarkus application structure is correct and buildable.
-- Ensure there is a class with a main method that runs Quarkus, make it a separate file, do not interfere with Main class that just runs the solver as a standalone
+- Quarkus generates the REST server entry point automatically when building the application. Do not generate a custom Quarkus launcher or add `@QuarkusMain` just to serve REST; use the framework's default entry point for `java -jar target/quarkus-app/quarkus-run.jar`.
+- Keep the standalone solver Main separate: `exec-maven-plugin` selects it for `mvn exec:java`. Do not point `quarkus.package.main-class` at that solver Main or run a one-shot solve as the REST server's startup. Preserve explicitly requested custom startup behavior if any; a `Quarkus.run(SomeApplication.class, args)` call requires that class to implement `QuarkusApplication`, whereas a bootstrap-only Java launcher can use `Quarkus.run(args)`.
 - Implement a Main method that:
   - generates a dataset using the data generator
   - runs the solver
@@ -783,8 +784,8 @@ The following classes and methods do NOT exist in the Timefold API and will caus
 - `job.whenTerminated(...)` — does not exist
 - `solverManager.getSolverStatus()` returning a `boolean` — wrong return type (it returns `SolverStatus`)
 - `solverManager.getSolverJob(id)` — does not exist; store solutions in the `jobIdToJob` map via `withBestSolutionEventConsumer`
-- `.withProblem(problem)` on solveBuilder — does not exist; use `.withProblemFinder(jobId_ -> ...)` instead
-- `.withBestSolutionConsumer(solution -> ...)` on solveBuilder — does not exist; use `.withBestSolutionEventConsumer(event -> event.solution())` instead
+- Prefer `.withProblemFinder(jobId_ -> ...)` for the stored asynchronous job pattern. Timefold 1.31.0 also has `.withProblem(problem)`.
+- Both `.withBestSolutionConsumer(solution -> ...)` and `.withBestSolutionEventConsumer(event -> event.solution())` exist in Timefold 1.31.0. The template uses the event form; do not rewrite a working callback solely to switch between them.
 - `SolverManager.SolverJobListener` — does not exist; there is no nested `SolverStatus` class inside `SolverManager` either
 - `solverManager.solveAsync(...)` — does not exist; use `solveBuilder()...run()` for async solving
 - `complement(...)` in constraint streams — does not exist
