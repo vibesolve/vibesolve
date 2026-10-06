@@ -23,9 +23,6 @@ def test_user_validation_update_uses_typed_retry_path(monkeypatch, tmp_path):
     prompts = iter(["change the problem", ""])
 
     class FakeCaller:
-        def call(self, *_args, **_kwargs):
-            raise AssertionError("raw call path must not be used")
-
         def call_typed(self, agent, _message, model_type):
             calls.append((agent, model_type))
             if agent == "user_validator_explain":

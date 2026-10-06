@@ -10,6 +10,7 @@ _PROMPT_FILES: dict[str, str] = {
     "integrator": "integrator.txt",
     "reviewer": "reviewer.txt",
     "fixer": "fixer.txt",
+    "fixer_cheap": "fixer.txt",  # Same role/schema; separate model and usage bucket.
     "user_validator_explain": "user-validator-explain.txt",
     "user_validator_update": "user-validator-update.txt",
 }

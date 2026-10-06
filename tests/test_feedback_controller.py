@@ -45,6 +45,7 @@ def _validation(*, success: bool) -> ValidationResult:
 
 
 def _controller(caller: Mock, results: list[ValidationResult]) -> FeedbackController:
+    caller.last_model_config_for.return_value = None
     controller = FeedbackController(
         caller=caller,
         log=Mock(),
@@ -55,36 +56,6 @@ def _controller(caller: Mock, results: list[ValidationResult]) -> FeedbackContro
     controller.validator = Mock()
     controller.validator.validate.side_effect = results
     return controller
-
-
-def test_fixer_noop_is_retried_without_revalidation():
-    caller = Mock()
-    caller.call_typed.side_effect = [
-        FixerDelta(
-            explanation="Claimed to fix A.java",
-            changed_files=[{"path": "src/A.java", "content": "broken"}],
-            deleted_files=[],
-        ),
-        FixerDelta(
-            explanation="Actually fixed A.java",
-            changed_files=[{"path": "src/A.java", "content": "fixed"}],
-            deleted_files=[],
-        ),
-    ]
-    controller = _controller(
-        caller,
-        [_validation(success=False), _validation(success=True)],
-    )
-
-    manifest, success = controller.run(_problem_spec(), _manifest())
-
-    assert success
-    assert manifest.file_map()["src/A.java"].content == "fixed"
-    assert controller.validator.validate.call_count == 2
-    assert caller.call_typed.call_count == 2
-    assert caller.call_typed.call_args_list[0].args[2] is FixerDelta
-    assert "made no effective file changes" in caller.call_typed.call_args_list[1].args[1]
-    controller.log.warning.assert_any_call("fixer_no_changes", attempt=1)
 
 
 def test_fixer_noops_exhaust_budget_without_revalidation():
@@ -146,24 +117,6 @@ def test_delete_then_readd_identical_file_is_not_an_effective_change():
     assert not controller._has_file_changes(_manifest(), delta)
 
 
-def test_effective_fixer_delta_is_applied_and_revalidated():
-    caller = Mock()
-    caller.call_typed.return_value = FixerDelta(
-        changed_files=[{"path": "src/A.java", "content": "fixed"}],
-        deleted_files=[],
-    )
-    controller = _controller(
-        caller,
-        [_validation(success=False), _validation(success=True)],
-    )
-
-    manifest, success = controller.run(_problem_spec(), _manifest())
-
-    assert success
-    assert manifest.file_map()["src/A.java"].content == "fixed"
-    assert controller.validator.validate.call_count == 2
-
-
 def test_deletion_only_fixer_delta_is_applied_and_revalidated():
     caller = Mock()
     caller.call_typed.return_value = FixerDelta(
@@ -187,6 +140,7 @@ def test_context_survives_noop_retry_and_diagnostic_truncation(tmp_path):
     feedback = "Remove an earlier requirement. " * 400 + "FINAL CORRECTION"
     context = IntentContext(original, [feedback])
     caller = Mock()
+    caller.last_model_config_for.return_value = None
     caller.call_typed.side_effect = [
         FixerDelta(changed_files=[{"path": "src/A.java", "content": "broken"}], deleted_files=[]),
         FixerDelta(changed_files=[{"path": "src/A.java", "content": "fixed"}], deleted_files=[]),

@@ -9,9 +9,8 @@ import json
 import time
 import zipfile
 from pathlib import Path
-from typing import Callable
 
-from vibesolve.agents.client import BaseAgentCaller, make_caller_factory
+from vibesolve.agents.base import AgentCallerFactory
 from vibesolve.packaging import emit_docker_artifacts
 from vibesolve.validation.feedback_controller import FeedbackController, FeedbackConfig
 from vibesolve.models.domain import (
@@ -20,7 +19,7 @@ from vibesolve.models.domain import (
     ProblemSpec,
     ProjectManifest,
 )
-from vibesolve.models.results import ProblemResult
+from vibesolve.models.results import FixAttempt, ProblemResult
 from vibesolve.pipeline.user_validator import run_user_validation_loop
 from vibesolve.utils.patch_utils import apply_delta
 from vibesolve.utils.intent_context import IntentContext
@@ -99,8 +98,8 @@ def run_problem(
     container_name: str,
     log_dir: Path,
     results_dir: Path,
-    caller_factory: Callable,
-    max_fix_iterations: int = 5,
+    caller_factory: AgentCallerFactory,
+    max_fix_iterations: int = 2,
     enable_docker_validation: bool = True,
     serve: bool = False,
     enable_user_validation: bool = False,
@@ -145,6 +144,8 @@ def run_problem(
     )
 
     caller = caller_factory(log_dir, log)
+    fix_attempts: list[FixAttempt] = []
+    error_phases: list[str] = []
 
     try:
         raw_problem = input_file.read_text(encoding="utf-8")
@@ -182,7 +183,6 @@ def run_problem(
         # Docker validation + fixer loop
         validation_start = time.time()
         fix_iterations = 0
-        error_phases: list[str] = []
         final_error_phase = "none"
         validation_success = True
 
@@ -197,12 +197,15 @@ def run_problem(
                 error_log_path=log_dir / "validation_errors.log",
                 intent=context,
             )
-            manifest, validation_success = controller.run(
-                problem_spec=problem_spec,
-                initial_manifest=manifest,
-            )
+            try:
+                manifest, validation_success = controller.run(
+                    problem_spec=problem_spec,
+                    initial_manifest=manifest,
+                )
+            finally:
+                fix_attempts = list(controller.fix_history)
+                error_phases = list(controller.error_phases)
             fix_iterations = len(controller.fix_history)
-            error_phases = list(controller.error_phases)
             if error_phases and not validation_success:
                 final_error_phase = error_phases[-1]
         else:
@@ -259,6 +262,7 @@ def run_problem(
             final_error_phase=final_error_phase,
             agent_times=caller.agent_times,
             agent_tokens=caller.agent_tokens,
+            fix_attempts=fix_attempts,
             error=None,
         )
 
@@ -275,10 +279,13 @@ def run_problem(
             total_time_s=total_time_s,
             pipeline_time_s=sum(caller.agent_times.values()),
             validation_time_s=0.0,
-            fix_iterations=0,
-            error_phases=[],
+            fix_iterations=len(fix_attempts),
+            error_phases=error_phases,
             final_error_phase="crash",
             agent_times=caller.agent_times,
             agent_tokens=caller.agent_tokens,
+            fix_attempts=fix_attempts,
             error=error_msg,
         )
+    finally:
+        caller.close()

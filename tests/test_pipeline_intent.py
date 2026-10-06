@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from vibesolve.agents.base import BaseAgentCaller
 from vibesolve.models.domain import (
     Delta, FixerDelta, GenerationDelta, ModelBuilderDelta, ProblemSpec,
     UserValidationExplanation,
@@ -22,12 +23,16 @@ def _spec(revision=0):
                        constraints=[], objectives=[], dataRequirements=[], assumptions=[], domainContext=[])
 
 
-class _Caller:
+class _Caller(BaseAgentCaller):
     def __init__(self, fail_at=None):
         self.agent_times, self.agent_tokens = {}, {}
         self.calls = []
         self.updates = 0
         self.fail_at = fail_at
+        self.closed = 0
+
+    def close(self):
+        self.closed += 1
 
     def call_typed(self, agent, message, model_type):
         self.calls.append((agent, message, model_type))
@@ -45,8 +50,8 @@ class _Caller:
                                      changed_files=[{"path": "pom.xml", "content": "<project/>"}])
         if agent == "reviewer":
             return Delta(changed_files=[])
-        if agent == "fixer":
-            return FixerDelta(changed_files=[{"path": "src/constraint_builder.java", "content": "fixed"}], deleted_files=[])
+        if agent in {"fixer", "fixer_cheap"}:
+            return FixerDelta(changed_files=[{"path": "src/constraint_builder.java", "content": "cheap fix" if agent == "fixer_cheap" else "fixed"}], deleted_files=[])
         assert agent in GENERATORS
         return GenerationDelta(changed_files=[{"path": f"src/{agent}.java", "content": agent}])
 
@@ -78,7 +83,8 @@ def test_parser_omission_reaches_every_downstream_role_without_extra_calls(tmp_p
     caller = _Caller()
     result = _run(tmp_path, caller, docker=docker)
     assert result.success, result.error
-    assert [agent for agent, _, _ in caller.calls] == ["parser", *GENERATORS, *(["reviewer", "fixer"] if docker else [])]
+    assert caller.closed == 1
+    assert [agent for agent, _, _ in caller.calls] == ["parser", *GENERATORS, *(["reviewer", "fixer_cheap"] if docker else [])]
     assert caller.calls[0][1] == ORIGINAL
     for agent, message, _ in caller.calls[1:]:
         payload = json.loads(message)
@@ -105,7 +111,7 @@ def test_later_corrections_survive_lossy_updates_and_reach_generation_and_fixer(
     assert result.success, result.error
     assert [agent for agent, _, _ in caller.calls] == [
         "parser", "user_validator_explain", "user_validator_update", "user_validator_explain",
-        "user_validator_update", "user_validator_explain", *GENERATORS, "reviewer", "fixer",
+        "user_validator_update", "user_validator_explain", *GENERATORS, "reviewer", "fixer_cheap",
     ]
     seen = []
     for agent, message, _ in caller.calls[1:]:
@@ -129,6 +135,49 @@ def test_update_failure_stops_generation(tmp_path, monkeypatch):
     caller = _Caller(fail_at="user_validator_update")
     result = _run(tmp_path, caller, user_validate=True)
     assert not result.success and "failed at user_validator_update" in result.error
+    assert caller.closed == 1
     assert [agent for agent, _, _ in caller.calls] == ["parser", "user_validator_explain", "user_validator_update"]
     assert json.loads(caller.calls[-1][1])["UserClarifications"] == [correction]
     assert not (tmp_path / "results/ProjectManifest.json").exists()
+
+
+def test_validation_exception_keeps_attempt_route_in_failed_result(tmp_path, monkeypatch):
+    validator = _docker(monkeypatch)
+    validator.validate.side_effect = [
+        ValidationResult(success=False, compilation_output="", runtime_output="Solver error",
+                         exit_code=1, error_phase="runtime"),
+        RuntimeError("validator unavailable"),
+    ]
+    result = _run(tmp_path, _Caller(), docker=True, budget=2)
+    assert not result.success and result.error == "validator unavailable"
+    assert result.fix_iterations == 1
+    assert result.fix_attempts[0].agent == "fixer_cheap"
+    assert result.fix_attempts[0].outcome == "pending"
+
+
+@pytest.mark.parametrize("final_success", [False, True])
+def test_cheap_first_flows_through_pipeline_and_keeps_history(tmp_path, monkeypatch, final_success):
+    validator = _docker(monkeypatch)
+    failure = ValidationResult(success=False, compilation_output="", runtime_output="Solver error",
+                               exit_code=1, error_phase="runtime")
+    validator.validate.side_effect = [failure, failure, ValidationResult(
+        success=final_success, compilation_output="", runtime_output="", test_output="",
+        exit_code=0 if final_success else 1, error_phase="none" if final_success else "test",
+    )]
+    caller = _Caller()
+    result = _run(tmp_path, caller, docker=True, budget=2)
+    assert result.success is final_success and result.error is None
+    assert result.error_phases == ["runtime", "runtime", *([] if final_success else ["test"])]
+    assert result.final_error_phase == ("none" if final_success else "test")
+    assert [a.agent for a in result.fix_attempts] == ["fixer_cheap", "fixer"]
+    assert result.fix_attempts[1].fixed is final_success
+    assert result.fix_iterations == 2 and validator.validate.call_count == 3
+    assert caller.closed == 1
+    for _, message, _ in caller.calls[-2:]:
+        payload = json.loads(message)
+        assert payload["OriginalRequest"] == ORIGINAL
+        assert {f["path"] for f in payload["ProjectManifest"]["files"]} == {
+            "pom.xml", "src/constraint_builder.java", "src/io.java", "src/integrator.java",
+        }
+    manifest = json.loads((tmp_path / "results/ProjectManifest.json").read_text())
+    assert next(f["content"] for f in manifest["files"] if f["path"] == "src/constraint_builder.java") == "fixed"

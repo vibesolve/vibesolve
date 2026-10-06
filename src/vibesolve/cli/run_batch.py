@@ -12,7 +12,7 @@ from typing import Annotated, List, Optional
 
 import typer
 
-from vibesolve.agents.client import make_caller_factory
+from vibesolve.agents.pi_client import make_caller_factory
 from vibesolve.benchmarking import (
     benchmark_csv_rows,
     benchmark_from_results,
@@ -60,11 +60,11 @@ def run(
     ] = False,
     max_iterations: Annotated[
         Optional[int],
-        typer.Option("--max-iterations", help="Max fixer iterations per problem."),
+        typer.Option("--max-iterations", min=0, help="Total repair attempts per problem: IO model first, then the fixer model."),
     ] = None,
     provider: Annotated[
         Optional[str],
-        typer.Option("--provider", help="LLM provider: openai|claude (default: openai)."),
+        typer.Option("--provider", help="Pi provider name, e.g. openai, openai-codex, anthropic, google. Aliases: claude, gemini, bedrock."),
     ] = None,
     serve: Annotated[
         bool,
@@ -107,6 +107,17 @@ def run(
         if not input_files:
             typer.echo(f"ERROR: No *.txt files found in {input_dir}", err=True)
             raise typer.Exit(code=1)
+
+    # Results, logs and benchmark lookup all use the input filename stem.
+    seen_stems: set[str] = set()
+    for input_file in input_files:
+        if input_file.stem in seen_stems:
+            typer.echo(
+                f"ERROR: Duplicate input name {input_file.stem!r}; use unique filename stems to avoid overwriting batch outputs.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        seen_stems.add(input_file.stem)
 
     n_workers = min(settings.default_workers, len(input_files))
     enable_docker = settings.enable_docker_validation
@@ -212,6 +223,7 @@ def run(
             "final_error_phase": r.final_error_phase,
             "agent_times": {k: round(v, 2) for k, v in r.agent_times.items()},
             "agent_tokens": r.agent_tokens,
+            "fix_attempts": [attempt.model_dump() for attempt in r.fix_attempts],
             "error": r.error,
         }
         for r in summary.problem_results
