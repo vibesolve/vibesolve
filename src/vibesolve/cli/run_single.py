@@ -4,21 +4,21 @@ CLI entry point for single-problem pipeline runs.
 Exposes the `run` command, wired up as `vibesolve run` by `cli/main.py`.
 """
 
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Optional, cast, get_args
 
 import typer
 
-from vibesolve.agents.client import make_caller_factory
-from vibesolve.config.settings import AgentEfforts, load_settings
+from vibesolve.agents.pi_client import make_caller_factory
+from vibesolve.config.settings import EffortLevel, load_settings
 from vibesolve.reporting.kpi_tracker import aggregate_token_usage
 from vibesolve.validation.docker_validator import DockerValidator
 from vibesolve.pipeline.runner import run_problem
 from vibesolve.utils import configure_logging
 
 app = typer.Typer(help="Run the Timefold generation pipeline for a single problem.")
-
 
 @app.command()
 def run(
@@ -32,15 +32,15 @@ def run(
     ] = False,
     max_iterations: Annotated[
         Optional[int],
-        typer.Option("--max-iterations", help="Max fixer agent iterations."),
+        typer.Option("--max-iterations", min=0, help="Total repair attempts: IO model first, then the fixer model."),
     ] = None,
     reasoning_effort: Annotated[
         Optional[str],
-        typer.Option("--reasoning-effort", help="Override reasoning effort for ALL agents: low|medium|high. Omit to use per-agent config."),
+        typer.Option("--reasoning-effort", help="Override reasoning effort for ALL agents: auto, none, low, medium, high. Omit to use per-agent config."),
     ] = None,
     provider: Annotated[
         Optional[str],
-        typer.Option("--provider", help="LLM provider: openai|claude (default: openai)."),
+        typer.Option("--provider", help="Pi provider name, e.g. openai, openai-codex, anthropic, google. Aliases: claude, gemini, bedrock."),
     ] = None,
     serve: Annotated[
         bool,
@@ -65,8 +65,13 @@ def run(
     if max_iterations is not None:
         settings = settings.model_copy(update={"max_fix_iterations": max_iterations})
     if reasoning_effort is not None:
-        all_agents = {a: reasoning_effort for a in AgentEfforts().as_dict()}
-        settings = settings.model_copy(update={"efforts": AgentEfforts(**all_agents)})
+        if reasoning_effort not in get_args(EffortLevel):
+            raise typer.BadParameter("must be one of: " + ", ".join(get_args(EffortLevel)),
+                                     param_hint="--reasoning-effort")
+        effort = cast(EffortLevel, reasoning_effort)
+        settings = settings.model_copy(update={"provider_models": {
+            provider: models.with_effort(effort) for provider, models in settings.provider_models.items()
+        }})
     if no_validation_loop:
         settings = settings.model_copy(update={"enable_docker_validation": False})
     if provider is not None:
@@ -101,8 +106,12 @@ def run(
     typer.echo(f"Time    : {result.total_time_s:.1f}s  (pipeline {result.pipeline_time_s:.1f}s)")
 
     tokens = aggregate_token_usage([result])
+    results_dir.mkdir(parents=True, exist_ok=True)
+    (results_dir / "RunResult.json").write_text(
+        json.dumps({**result.model_dump(), **tokens}, indent=2), encoding="utf-8",
+    )
     cost = tokens["estimated_cost_usd"]
-    cost_str = f"  (~${cost:.4f})" if cost is not None else ""
+    cost_str = f"  (~${cost:.4f} API-equivalent estimate)" if cost is not None else "  (cost unknown)"
     typer.echo(
         f"Tokens  : {tokens['total_tokens']:,} total"
         f"  (in {tokens['total_input_tokens']:,}, cached {tokens['total_cached_input_tokens']:,},"

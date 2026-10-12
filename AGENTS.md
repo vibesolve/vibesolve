@@ -1,217 +1,121 @@
-# AGENTS.md
+# Agent instructions
 
-Guide for AI coding agents working in this repository.
+VibeSolve is a Python tool that turns a natural-language optimization problem
+into a Java/Quarkus/Timefold Maven project, validated in Docker. Improve the
+generator under `src/vibesolve/`, not ephemeral generated files in `results/`.
 
-## What this project is
+Read [README.md](README.md) for setup/usage, [ARCHITECTURE.md](ARCHITECTURE.md)
+for the pipeline and validation flow, and [PI_CALLER.md](PI_CALLER.md) for
+provider setup and caller limits.
 
-`vibesolve` is a multi-agent pipeline that converts a free-text optimization
-problem description (e.g. "schedule deliveries", "assign nurses to shifts") into a complete, runnable [Timefold Solver](https://timefold.ai/) Quarkus project, validated by Docker before it lands on disk.
-
-A user writes a sentence; a sequence of LLM agents (parser → model builder →
-constraint builder → IO → integrator, plus optional reviewer/fixer/user
-validator) emits Java domain classes, constraint streams, REST endpoints,
-`pom.xml`, tests, and `solverConfig.xml`. The output is a Maven project that
-compiles and runs in a containerized JDK 17.
-
-This is a **Python tool that generates Java projects** — do not confuse the
-Python source under `src/vibesolve/` with the generated artifacts under
-`results/`.
-
-## Setup (one-time)
+## Development checks
 
 ```bash
-uv sync --extra dev                 # creates .venv and installs package + test deps
-source .venv/bin/activate           # once per shell — puts `vibesolve` and `pytest` on PATH
-cp .env.example .env.local          # then fill in OPENAI_API_KEY
-docker build -t timefold-validator docker/   # pre-bakes Maven deps into the validator image
+uv sync --extra dev
+uv run pytest
+npm ci --prefix src/vibesolve/pi_worker --ignore-scripts
+npm test --prefix src/vibesolve/pi_worker
 ```
 
-Python 3.11+ is required (modern type annotations). Every command in this file assumes the venv is activated; without activation, prefix with `uv run` (e.g. `uv run pytest`). If uv cannot find a suitable Python, install one with `uv python install 3.13`.
+These tests are offline; they need neither credentials nor Docker. Node
+>=22.19 and npm are required for the worker. For end-to-end checks, configure
+credentials as described in the README, start Docker and run a bundled problem:
 
-For the Anthropic/Claude provider, add `ANTHROPIC_API_KEY=...` to `.env.local` and pass `--provider claude` (or set it in `config.yaml`).
-
-Make sure the Docker daemon is running before the `docker build` (Linux:
-`sudo systemctl start docker`; macOS/Windows: launch Docker Desktop).
-
-## CLI
-
-There is a single `vibesolve` command (defined in `pyproject.toml [project.scripts]` as `vibesolve.cli.main:app`) with two subcommands. Run them from the repo root.
-
-| Command | Purpose | Source |
-|---|---|---|
-| `vibesolve run [input.txt]` | Run the pipeline on one problem | `src/vibesolve/cli/run_single.py` |
-| `vibesolve batch [files...]` | Parallel batch over `user_input/*.txt` | `src/vibesolve/cli/run_batch.py` |
-
-`cli/main.py` is the entry point; it registers the two functions as subcommands.
-Run `vibesolve --help` (or `vibesolve run --help` / `vibesolve batch --help`) for the full option list.
-
-Flags shared by both subcommands:
-
-- `--config path/to.yaml` — use a different config file (the root `config.yaml` auto-loads otherwise)
-- `--provider openai|claude` — pick the LLM provider
-- `--no-validation-loop` — skip the Docker validation/fixer loop entirely (prompt-debugging only)
-- `--max-iterations N` — cap fixer retries
-- `--serve` — on success, emit a portable `Dockerfile` + `docker-run.sh` into the generated project
-
-`run` only:
-
-- `--reasoning-effort low|medium|high` — overrides every agent's effort at once (per-agent defaults live in the `efforts:` config block; see below)
-- `--user-validate` — pause after parsing to let the user review/correct the `ProblemSpec` interactively before code generation
-
-`batch` only:
-
-- `--workers N` — size of the parallel container pool
-- `--input-dir DIR` — directory to scan for `*.txt` (default `user_input/`)
-- Every batch ends with a benchmark table (Compiles · Solver runs · Quarkus runs · Endpoints work · Docker works · Cost · Tokens). Compiles/Solver/Cost/Tokens are free from pipeline results; Quarkus/Endpoints/Docker are measured by a serial post-batch Docker pass (`src/vibesolve/benchmarking/`). The Docker column needs `--serve` (else 0); `--no-validation-loop` skips the table entirely.
-
-## Pipeline architecture
-
-```
-user_input/*.txt
-   │
-   ▼   Parser (gpt-5-mini)                            → ProblemSpec
-   │
-   ▼   [User Validator — Explain / Update]            ← --user-validate (optional, interactive)
-   │
-   ▼   Model Builder      → Delta → ProjectManifest   (domain classes + skeleton pom.xml)
-   ▼   Constraint Builder → Delta → ProjectManifest   (ConstraintProvider)
-   ▼   IO Agent           → Delta → ProjectManifest   (JsonIO)
-   ▼   Integrator         → Delta → ProjectManifest   (Main, REST, solverConfig, tests, full pom.xml)
-   │
-   ▼   Reviewer            → Delta (pre-flight static fixes; on by default)
-   ▼   Docker validate    (mvn clean compile  →  mvn exec:java [timeout 30s]  →  mvn test)
-   │
-   ├─ PASS  → write ProblemSpec.json, ProjectManifest.json, project dir + .zip
-   └─ FAIL  → Fixer (gpt-5-mini, high effort) → re-validate, up to N iterations
+```bash
+uv run vibesolve run user_input/timetable.txt
 ```
 
-Each agent except Parser/UserValidator returns a `Delta` (`changed_files`, `deleted_files`, optional `projectName`/`basePackage`, optional `explanation`), which is merged into the accumulated `ProjectManifest` by
-`utils.patch_utils.apply_delta`. Agents emit only the files they changed — never the whole project — which keeps later-stage output small.
+The validator image builds on first use; rebuild with
+`docker build -t timefold-validator docker/` when its Dockerfile or warmup POM
+changes. `--no-validation-loop` is for prompt debugging, not quality validation.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for prompt-evaluation expectations.
 
-## Where things live
+## Editing map
 
-```
-src/vibesolve/
-├── agents/
-│   ├── client.py          BaseAgentCaller + OpenAIAgentCaller + AnthropicAgentCaller + make_caller_factory
-│   └── prompts.py         load_prompt() + _PROMPT_FILES (agent → filename map)
-├── cli/                   main.py (entry point) + run_single.py (`run`) + run_batch.py (`batch`)
-├── config/settings.py     AppSettings (pydantic-settings) + load_settings(yaml)
-├── models/
-│   ├── domain.py          ProblemSpec, ProjectManifest, Delta, FileEntry, UserValidationExplanation
-│   └── results.py         ValidationResult, ProblemResult, BatchSummary, FixAttempt
-├── packaging.py           emit_docker_artifacts() — writes Dockerfile/docker-run.sh for --serve
-├── pipeline/
-│   ├── runner.py          run_problem() — the orchestrator; GENERATION_STAGES defines the agent order
-│   └── user_validator.py  run_user_validation_loop() — explain/update interactive loop
-├── prompts/               One .txt file per agent — these ARE the agents
-├── reporting/kpi_tracker.py    aggregate_results, generate_report
-├── utils/
-│   ├── logging_config.py  configure_logging() — structlog
-│   └── patch_utils.py     apply_delta(manifest, delta) → manifest
-└── validation/
-    ├── container_pool.py     DockerContainerPool for parallel workers
-    ├── docker_validator.py   DockerValidator (persistent container; compile/run/test phases)
-    └── feedback_controller.py FeedbackController — Reviewer → validate → Fixer loop
+All source paths below are relative to `src/vibesolve/`.
 
-tests/                     Offline unit/smoke tests (no API key / Docker needed) — run with `pytest`
-docker/Dockerfile          eclipse-temurin:17-jdk-jammy + Maven
-docker/pom-warmup.xml      warms the Maven cache at image build with the generated projects' dependency set
-user_input/*.txt           Problem descriptions — input to the pipeline
-config.yaml                Project-level settings (auto-loaded; CLI flags override)
-.env.local                 OPENAI_API_KEY / ANTHROPIC_API_KEY — NEVER commit (copy from .env.example)
-logs/run_<ts>/             pipeline.log + per-agent raw response files
-results/run_<ts>/          ProblemSpec.json, ProjectManifest.json, <project>/, <project>.zip
-```
+| Change | Location |
+|---|---|
+| Stage order / handoffs | `pipeline/runner.py:GENERATION_STAGES` |
+| Interactive explain/update | `pipeline/user_validator.py` |
+| Role instructions | `prompts/<role>.txt`; registration in `agents/prompts.py:_PROMPT_FILES` |
+| Typed output | `models/domain.py`; outcome/usage records in `models/results.py` |
+| Model/effort defaults | `config/provider_models.json`; merging in `config/settings.py` |
+| Typed caller / routes / construction | `agents/pi_client.py` |
+| Worker installation / transport | `agents/pi_install.py`, `pi_process.py`, `pi_protocol.py`, `pi_worker/` |
+| Reviewer and repair policy | `validation/feedback_controller.py` |
+| Container checks | `validation/docker_validator.py`, `container_pool.py` |
+| CLI / reports | `cli/`, `reporting/`, `benchmarking/` |
 
-Rough dependency direction (no import cycles): `models → utils → agents →
-validation → pipeline → cli`; `config` is a leaf used by `cli`.
+To add a role, register its prompt, add the model setting to `AgentModels` and
+each bundled profile, and wire its invocation into the appropriate orchestrator.
 
-## Configuration (priority high → low)
+`load_prompt()` adds role-selected `shared-complement.txt` / `shared-jackson.txt`
+API notes, then appends `shared-intent.txt` to non-parser roles. Every downstream
+role receives `OriginalRequest` and exact, ordered `UserClarifications`.
+Explicit corrections take precedence over unchanged original requirements,
+which take precedence over inconsistent spec details. Keep this context outside
+diagnostic truncation; `IntentContext` is per-run memory, not versioned storage.
 
-1. CLI flags
-2. Environment variables (`OPENAI_API_KEY`, `MODELS__FIXER=gpt-5`, `PROVIDER=claude`, …)
-3. `config.yaml` at repo root (auto-loaded if present)
-4. `.env.local`
-5. Built-in defaults in `config/settings.py`
+`fixer_cheap` is a prompt/telemetry alias using the IO model, not a separate model
+setting. Attempt one uses it; later attempts use `fixer`. The default total
+budget is two attempts. An attempt that changes no files still uses up budget
+but is not revalidated. An attempt that changes files is revalidated. A caller
+error that survives retries ends the repair loop. Keep the recorded route,
+outcome and usage of each attempt in single-run and batch reports.
 
-`MODELS__<AGENT>` and `CLAUDE_MODELS__<AGENT>` env vars override per-agent model
-names — pydantic-settings parses the `__` nesting.
+## Caller boundary
 
-## Modifying agent behavior
+`PiAgentCaller.call_typed()` is the only caller entry point. Python owns prompts,
+context, routing, Pydantic validation and `apply_delta`; Pi only supplies
+completions and usage. Keep inputs, routes and budgets stable across retries.
+Always close each problem's worker and private transport session. Do not add
+agent tools, conversation continuation, protocol compatibility or custom
+provider caching. [PI_CALLER.md](PI_CALLER.md) defines limits and lifecycle.
 
-- **Change what an agent does** → edit the corresponding `src/vibesolve/prompts/<agent>.txt`. The file content IS the system prompt.
-- **Add a new agent** → add a `.txt` to `prompts/`, register it in `agents/prompts.py:_PROMPT_FILES`, add a model default in `config/settings.py:AgentModels` (and `ClaudeAgentModels`), and wire it into `pipeline/runner.py:GENERATION_STAGES` (or `FeedbackController` for a validation-time agent).
-- **Output schema** → most agents output `Delta`; Parser outputs `ProblemSpec`; User-Validator-Explain outputs `UserValidationExplanation`. All are Pydantic models in `models/domain.py`.
-- **Per-agent reasoning effort** → `config/settings.py:AgentEfforts` and the `efforts:` block in `config.yaml` (defaults: reviewer=medium, fixer=high, everything else low). Read in `agents/client.py` via `settings.efforts.as_dict()[agent]`; `--reasoning-effort` overrides every agent at once.
+## Generated-project invariants
 
-`BaseAgentCaller.call_typed()` retries on JSON-parse failure. For Anthropic,
-`_extract_and_repair()` strips code fences and runs `json_repair`, because Claude
-has no JSON mode like OpenAI's Responses API.
+These are encoded in the prompts and protect observed failure modes. Do not
+simplify them without checking why they exist.
 
-## Generated-project conventions (encoded in prompts)
+- Java 17, Quarkus 3.31.2, Timefold Solver 1.31.0, Maven and fixed `HardSoftScore`.
+- `com.example.*` packages: `domain`, `solver`, `io`, `generator`, `rest`.
+- REST lives in `rest/SolverResource.java`, with the full `/api/*` endpoint set
+  from the integrator template; never substitute `MyResource.java`.
+- Jakarta EE imports (`jakarta.ws.rs.*`), never `javax.ws.rs.*`.
+- Timefold dependencies are `timefold-solver-quarkus`,
+  `timefold-solver-quarkus-jackson`, `timefold-solver-test`, and the solver BOM;
+  `timefold-solver-constraints` does not exist.
+- `exec-maven-plugin` 3.6.3 must configure the fully qualified standalone Main
+  class. Quarkus owns HTTP startup, not this Main.
+- Production `solverConfig.xml` uses `REPRODUCIBLE` and 15-second termination.
+  Test-only `solverConfigTest.xml` uses `FULL_ASSERT` solely under `%test`;
+  never serve requests in `FULL_ASSERT`.
+- Tests generate datasets with `DataGenerator`, solve in `FULL_ASSERT`, and
+  assert at least one planning variable is assigned. Round-trip an existing
+  solved result through actual standalone JSON IO and assert an unchanged,
+  non-null `HardSoftScore`; REST tests do not cover that mapper.
+- `@PlanningSolution` exposes a `solverStatus` field of top-level `SolverStatus`,
+  not `SolverManager.SolverStatus`; do not add `@JsonIgnore`.
+- XML comments end in `-->`, never `--->`.
 
-These are stable invariants of the generated Java output — relevant when
-debugging fixer loops or editing prompts:
+For compiler failures, repair context includes referenced files, `pom.xml`,
+domain declarations and a complete `ProjectFiles` inventory. Runtime/test
+failures retain the full manifest. Do not interpret omitted file contents as
+permission to delete or recreate files.
 
-- **Stack**: Java 17, Quarkus 3.31.2, Timefold Solver 1.31.0, Maven, `HardSoftScore` (the score type is fixed — do not use another).
-- **Package layout**: `com.example.*` (`domain`, `solver`, `io`, `generator`, `rest`).
-- **REST resource**: must be `rest/SolverResource.java` implementing the full mandatory endpoint set from the prompt template (`/api/all`, generate/solve/status/stop/analyze). Do NOT name it `MyResource.java`.
-- **Imports**: Jakarta EE 10 — `jakarta.ws.rs.*`, never `javax.ws.rs.*` (Quarkus 3.x).
-- **Pom dependencies**: only `timefold-solver-quarkus`, `-quarkus-jackson`, `-test`, `-bom`. The artifact `timefold-solver-constraints` does NOT exist (a common fixer footgun).
-- **`exec-maven-plugin` 3.6.3** with `<configuration><mainClass>` set to the fully-qualified Main class — required for `mvn exec:java` to find it.
-- **Solver termination**: 15 seconds in `solverConfig.xml`.
-- **Two solver configs**: `solverConfig.xml` is production (`REPRODUCIBLE` mode, used by the Quarkus REST layer); `solverConfigTest.xml` is test-only (`FULL_ASSERT`, far slower, activated solely under the `%test` profile). Never let FULL_ASSERT run when serving requests.
-- **Tests**: generate datasets via `DataGenerator`, run the solver in `FULL_ASSERT`, and assert at least one planning variable is assigned.
-- **`@PlanningSolution`** must include a `solverStatus` field of type `SolverStatus` (a standalone top-level class, NOT `SolverManager.SolverStatus`); do not add `@JsonIgnore`.
-- **XML comments**: only `<!-- ... -->`; `<!-- ... --->` (triple dash) is a hard XML parse failure.
+## Repository rules
 
-## Docker validator
-
-The persistent container `timefold-validator-persistent` (image `timefold-validator`) stays running between fix iterations to keep the Maven cache warm — cold start is slow, subsequent compiles are fast. For batch runs, `DockerContainerPool` pre-starts a pool of N persistent containers.
-
-`DockerValidator.validate()` has three phases:
-1. `mvn [clean] compile` — compile errors feed the fixer loop
-2. `mvn exec:java` wrapped in `timeout 30` — exit code 124 (timed out) counts as **pass** (the solver was running)
-3. `mvn test` — tests must pass
-
-`FeedbackController._select_relevant_files()` ships only the files referenced in the compile-error output to the fixer, keeping token usage small. `_pom_changed()` toggles incremental compile (skip `mvn clean`) when only Java changed.
-
-## Output layout
-
-```
-logs/run_<ts>/
-  pipeline.log                       # structured log (one per run)
-  <agent>-response_<id>.txt          # raw LLM response, one file per agent call
-
-results/run_<ts>/
-  ProblemSpec.json
-  ProjectManifest.json
-  problem-spec-review.md             # only when --user-validate was used
-  <project-name>/                    # extracted Maven project
-    pom.xml
-    src/main/java/com/example/...
-    Dockerfile  .dockerignore  docker-run.sh   # only with --serve
-  <project-name>.zip
-```
-
-For batch runs: `logs/batch_<ts>/<problem>/` and `results/batch_<ts>/<problem>/`,
-plus `summary.json` + `summary.txt`.
-
-## Iterating quickly
-
-- **Run the offline tests**: `pytest` — no API key or Docker needed.
-- **See what an agent returned**: read `logs/run_<ts>/<agent>-response_*.txt` — raw responses, one file per call.
-- **Skip Docker to isolate prompt issues**: `vibesolve run --no-validation-loop`.
-- **Debug a single problem end-to-end**: `vibesolve run user_input/<file>.txt --max-iterations 3 --reasoning-effort medium`.
-- **Run the containerized output**: `vibesolve run --serve`, then `cd results/run_<ts>/<project>/ && ./docker-run.sh` → http://localhost:8080/q/swagger-ui.
-
-## Project rules to respect when editing
-
-- **Never commit** `.env.local`, `logs/`, `results/`, `.validation_temp/` — all gitignored.
-- **Don't `git add -A`** — large local-only experiment dirs (`assets/`, `vanilla_api_tests/`, `advent_problems/`) are untracked but NOT gitignored; stage files explicitly.
-- **Match the surrounding style** — Pydantic v2 models, structlog logging, typed `pathlib.Path`, no `dict[str, Any]` at boundaries.
-- **Prompts are first-class code** — they encode hard-won invariants (Jakarta vs javax, missing artifacts, XML comment rules). Don't simplify prompt instructions without checking whether they fix a real failure mode.
-- **`apply_delta` is the only legitimate way to merge agent output** — don't write ad-hoc merging logic.
-- **Generated artifacts in `results/` are ephemeral** — never edit a generated `.java`/`pom.xml` to fix a bug; fix the prompt or the fixer instead.
-- **Add or update `tests/`** when changing the CLI surface, settings, or model/merge logic.
+- Never commit `.env.local`, `logs/`, `results/` or `.validation_temp/`.
+  Do not copy Pi login credentials into the repository or logs.
+- Never use `git add -A`: local-only experiment directories such as `assets/`,
+  `vanilla_api_tests/` and `advent_problems/` may be untracked but not ignored.
+  Stage explicit paths and preserve unrelated user changes.
+- Match the surrounding style: Pydantic v2, structlog, typed `pathlib.Path`,
+  no `dict[str, Any]` at boundaries. Avoid import cycles.
+- `apply_delta` is the only legitimate merge operation; no ad-hoc file merging.
+- Fix the prompt or repair policy, never generated `.java` / `pom.xml` files.
+- Add/update tests for CLI, settings, caller, models and merge behavior.
+- For debugging, inspect `logs/run_<timestamp>/<agent>-response_*.txt` and
+  `pipeline.log`; batch logs are under `logs/batch_<timestamp>/<problem>/`.
+  Treat raw responses and input-bearing artifacts as sensitive when sharing.

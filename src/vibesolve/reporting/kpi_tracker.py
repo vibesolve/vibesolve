@@ -11,57 +11,10 @@ from vibesolve.models.results import BatchSummary, ProblemResult
 __all__ = [
     "ProblemResult",
     "BatchSummary",
-    "MODEL_PRICING",
     "aggregate_token_usage",
     "aggregate_results",
     "generate_report",
 ]
-
-
-# USD per 1,000,000 tokens. VERIFY against current OpenAI/Anthropic pricing —
-# rates change and these are best-effort. Token COUNTS reported below are exact;
-# only the dollar figure depends on this table. Add/edit models as needed. A model
-# not listed here yields cost=None (the batch's whole estimate becomes "n/a").
-#   input        = fresh (non-cached) prompt tokens
-#   cached_input = prompt tokens served from cache (billed cheaper)
-#   output       = completion tokens
-# OpenAI cached_input = the published cached-input rate (≈0.1× input).
-# Anthropic cached_input = the cache-READ rate (0.1× input); cache writes (1.25–2×)
-#   are not modeled separately.
-MODEL_PRICING: dict[str, dict[str, float]] = {
-    # OpenAI — GPT-5 series
-    "gpt-5":           {"input": 1.25, "cached_input": 0.125, "output": 10.00},
-    "gpt-5-mini":      {"input": 0.25, "cached_input": 0.025, "output": 2.00},
-    "gpt-5-nano":      {"input": 0.05, "cached_input": 0.005, "output": 0.40},
-    # OpenAI — GPT-5.4 series
-    "gpt-5.4":         {"input": 2.50, "cached_input": 0.25, "output": 15.00},
-    "gpt-5.4-mini":    {"input": 0.75, "cached_input": 0.075, "output": 4.50},
-    "gpt-5.4-nano":    {"input": 0.20, "cached_input": 0.02, "output": 1.25},
-    "gpt-5.4-pro":     {"input": 30.00, "cached_input": 30.00, "output": 180.00},
-    # OpenAI — GPT-5.5 series
-    "gpt-5.5":         {"input": 5.00, "cached_input": 0.50, "output": 30.00},
-    "gpt-5.5-pro":     {"input": 30.00, "cached_input": 30.00, "output": 180.00},
-    # Anthropic — Claude
-    "claude-fable-5":    {"input": 10.00, "cached_input": 1.00, "output": 50.00},
-    "claude-opus-4-8":   {"input": 5.00, "cached_input": 0.50, "output": 25.00},
-    "claude-opus-4-7":   {"input": 5.00, "cached_input": 0.50, "output": 25.00},
-    "claude-opus-4-6":   {"input": 5.00, "cached_input": 0.50, "output": 25.00},
-    "claude-sonnet-4-6": {"input": 3.00, "cached_input": 0.30, "output": 15.00},
-    "claude-haiku-4-5":  {"input": 1.00, "cached_input": 0.10, "output": 5.00},
-}
-
-
-def _cost_for_model(model: str, input_t: int, cached_t: int, output_t: int) -> float | None:
-    """Cost in USD for one model's usage, or None if the model has no price entry."""
-    rates = MODEL_PRICING.get(model)
-    if rates is None:
-        return None
-    fresh = max(input_t - cached_t, 0)  # input_tokens includes the cached subset
-    return (
-        fresh * rates["input"]
-        + cached_t * rates["cached_input"]
-        + output_t * rates["output"]
-    ) / 1_000_000
 
 
 def aggregate_token_usage(results: list[ProblemResult]) -> dict:
@@ -69,8 +22,8 @@ def aggregate_token_usage(results: list[ProblemResult]) -> dict:
     Sum token usage across all problem results, grouped by model.
 
     Returns a dict with grand totals and a per-model breakdown (including a
-    per-model cost_usd, or None when the model isn't in MODEL_PRICING). The
-    grand-total estimated_cost_usd is None if ANY used model lacks a price.
+    per-model cost_usd summed from Pi's per-response estimates). A missing
+    estimate makes that model's cost and the grand total unknown.
     """
     by_model: dict[str, dict] = {}
     for r in results:
@@ -78,23 +31,28 @@ def aggregate_token_usage(results: list[ProblemResult]) -> dict:
             model = usage.get("model", "unknown")
             agg = by_model.setdefault(
                 model,
-                {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0},
+                {"input_tokens": 0, "cached_input_tokens": 0, "cache_write_tokens": 0,
+                 "output_tokens": 0, "cost_usd": 0.0},
             )
             agg["input_tokens"] += usage.get("input_tokens", 0)
             agg["cached_input_tokens"] += usage.get("cached_input_tokens", 0)
             agg["output_tokens"] += usage.get("output_tokens", 0)
+            agg["cache_write_tokens"] += usage.get("cache_write_tokens", 0)
+            cost = usage.get("estimated_cost_usd")
+            agg["cost_usd"] = (
+                agg["cost_usd"] + cost
+                if agg["cost_usd"] is not None and cost is not None else None
+            )
 
-    total_input = total_cached = total_output = 0
+    total_input = total_cached = total_writes = total_output = 0
     total_cost = 0.0
     cost_known = True
-    for model, agg in by_model.items():
+    for agg in by_model.values():
         total_input += agg["input_tokens"]
         total_cached += agg["cached_input_tokens"]
         total_output += agg["output_tokens"]
-        cost = _cost_for_model(
-            model, agg["input_tokens"], agg["cached_input_tokens"], agg["output_tokens"]
-        )
-        agg["cost_usd"] = cost
+        total_writes += agg["cache_write_tokens"]
+        cost = agg["cost_usd"]
         if cost is None:
             cost_known = False
         else:
@@ -103,6 +61,7 @@ def aggregate_token_usage(results: list[ProblemResult]) -> dict:
     return {
         "total_input_tokens": total_input,
         "total_cached_input_tokens": total_cached,
+        "total_cache_write_tokens": total_writes,
         "total_output_tokens": total_output,
         "total_tokens": total_input + total_output,
         "estimated_cost_usd": round(total_cost, 4) if cost_known else None,
@@ -154,6 +113,7 @@ def aggregate_results(results: list[ProblemResult], batch_id: str) -> BatchSumma
         failed_problems=[r.problem_file for r in failures],
         total_input_tokens=tokens["total_input_tokens"],
         total_cached_input_tokens=tokens["total_cached_input_tokens"],
+        total_cache_write_tokens=tokens["total_cache_write_tokens"],
         total_output_tokens=tokens["total_output_tokens"],
         total_tokens=tokens["total_tokens"],
         estimated_cost_usd=tokens["estimated_cost_usd"],

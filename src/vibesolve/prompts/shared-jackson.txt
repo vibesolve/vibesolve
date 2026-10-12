@@ -1,0 +1,6 @@
+## Timefold 1.31.0: standalone scores
+
+Register ai.timefold.solver.jackson.api.TimefoldJacksonModule.createModule()
+with JavaTimeModule on standalone ObjectMapper for score read/write.
+timefold-solver-quarkus-jackson supplies it. ScoreJacksonModule and
+HardSoftScoreJacksonModule do not exist. Preserve working alternatives.

@@ -1,6 +1,20 @@
+import re
 from pathlib import PurePosixPath
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+_PROJECT_NAME_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def _validate_project_name(value: str) -> str:
+    """Accept the empty sentinel, or one portable lowercase-kebab directory name."""
+    if value == "":
+        return value
+    if _PROJECT_NAME_PATTERN.fullmatch(value) is None:
+        raise ValueError("project name must be a lowercase kebab-case directory name")
+    return value
 
 
 class FileEntry(BaseModel):
@@ -29,6 +43,11 @@ class ProjectManifest(BaseModel):
     base_package: str = Field("", alias="basePackage")
     files: list[FileEntry] = Field(default_factory=list)
 
+    @field_validator("project_name")
+    @classmethod
+    def _reject_unsafe_project_name(cls, value: str) -> str:
+        return _validate_project_name(value)
+
     def file_map(self) -> dict[str, FileEntry]:
         return {f.path: f for f in self.files}
 
@@ -48,7 +67,7 @@ class ProjectManifest(BaseModel):
 class Delta(BaseModel):
     """Partial manifest update returned by every agent except the Parser."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     project_name: str | None = Field(None, alias="projectName")
     base_package: str | None = Field(None, alias="basePackage")
@@ -56,24 +75,69 @@ class Delta(BaseModel):
     deleted_files: list[str] = Field(default_factory=list)
     explanation: str | None = None  # populated by reviewer/fixer agents
 
+    @field_validator("project_name")
+    @classmethod
+    def _reject_unsafe_project_name(cls, value: str | None) -> str | None:
+        return None if value is None else _validate_project_name(value)
+
+
+class GenerationDelta(Delta):
+    """A generation stage must contribute at least one project file."""
+
+    @model_validator(mode="after")
+    def _require_changed_file(self) -> "GenerationDelta":
+        if not self.changed_files:
+            raise ValueError("generation stage must include at least one changed file")
+        return self
+
+
+class ModelBuilderDelta(GenerationDelta):
+    """The first generation stage must establish project identity."""
+
+    project_name: str = Field(alias="projectName")
+    base_package: str = Field(alias="basePackage")
+
+    @field_validator("project_name", "base_package")
+    @classmethod
+    def _require_nonempty_project_metadata(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("model builder project metadata must not be empty")
+        return value
+
+
+class FixerDelta(Delta):
+    """A fixer response must change or delete at least one file."""
+
+    @model_validator(mode="after")
+    def _require_file_operation(self) -> "FixerDelta":
+        if not self.changed_files and not self.deleted_files:
+            raise ValueError("fixer must include at least one changed or deleted file")
+        return self
+
 
 class ProblemSpec(BaseModel):
-    """
-    Typed envelope for the Parser agent output.
+    """Validated, domain-agnostic contract returned by the Parser agent."""
 
-    Fields vary by problem domain, so extra="allow" accepts any additional
-    keys the parser produces without failing validation.
-    """
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    model_config = ConfigDict(extra="allow")
+    problem_type: str = Field(alias="problemType")
+    entities: list[str]
+    decisions: list[str]
+    constraints: list[str]
+    objectives: list[str]
+    data_requirements: list[str] = Field(alias="dataRequirements")
+    assumptions: list[str]
+    domain_context: list[str] = Field(alias="domainContext")
 
-    problem_type: str = Field("", alias="problemType")
-    entities: list = Field(default_factory=list)
-    decisions: list = Field(default_factory=list)
-    constraints: list = Field(default_factory=list)
-    objectives: list = Field(default_factory=list)
-    data_requirements: list = Field(default_factory=list, alias="dataRequirements")
-    assumptions: list = Field(default_factory=list)
+    @model_validator(mode="before")
+    @classmethod
+    def _unwrap_legacy_update_envelope(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        if "problemType" in value or "problem_type" in value:
+            return value
+        wrapped = value.get("problem_spec")
+        return wrapped if isinstance(wrapped, dict) else value
 
     def to_legacy_dict(self) -> dict:
         """Serialize back to camelCase for agent input messages."""

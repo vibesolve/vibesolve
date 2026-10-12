@@ -9,20 +9,25 @@ import json
 import time
 import zipfile
 from pathlib import Path
-from typing import Callable
 
-from vibesolve.agents.client import BaseAgentCaller, make_caller_factory
+from vibesolve.agents.base import AgentCallerFactory
 from vibesolve.packaging import emit_docker_artifacts
 from vibesolve.validation.feedback_controller import FeedbackController, FeedbackConfig
-from vibesolve.models.domain import Delta, ProblemSpec, ProjectManifest
-from vibesolve.models.results import ProblemResult
+from vibesolve.models.domain import (
+    GenerationDelta,
+    ModelBuilderDelta,
+    ProblemSpec,
+    ProjectManifest,
+)
+from vibesolve.models.results import FixAttempt, ProblemResult
 from vibesolve.pipeline.user_validator import run_user_validation_loop
 from vibesolve.utils.patch_utils import apply_delta
+from vibesolve.utils.intent_context import IntentContext
 from vibesolve.utils import configure_logging, get_run_logger
 
 # Ordered list of (agent_name, input_builder) tuples.
 # input_builder receives (problem_spec, accumulated_manifest) and returns the
-# JSON string to send as the user message. None means use the combined
+# payload to send as the user message. None means use the combined
 # ProblemSpec+ProjectManifest payload (default for all stages after the first).
 _GENERATION_STAGES: list[tuple[str, None]] = [
     ("model_builder",      None),
@@ -32,18 +37,18 @@ _GENERATION_STAGES: list[tuple[str, None]] = [
 ]
 
 
-def _model_builder_input(spec: ProblemSpec, _manifest: ProjectManifest) -> str:
-    return json.dumps(spec.to_legacy_dict())
+def _model_builder_input(spec: ProblemSpec, _manifest: ProjectManifest) -> dict:
+    return spec.to_legacy_dict()
 
 
-def _combined_input(spec: ProblemSpec, manifest: ProjectManifest) -> str:
-    return json.dumps({
+def _combined_input(spec: ProblemSpec, manifest: ProjectManifest) -> dict:
+    return {
         "ProblemSpec": spec.to_legacy_dict(),
         "ProjectManifest": manifest.to_legacy_dict(),
-    })
+    }
 
 
-# Maps agent name → function that builds the user message string
+# Maps agent name → function that builds the user message payload
 _INPUT_BUILDERS = {
     "model_builder": _model_builder_input,
     "constraint_builder": _combined_input,
@@ -53,6 +58,20 @@ _INPUT_BUILDERS = {
 
 # Ordered pipeline stage names
 GENERATION_STAGES = ["model_builder", "constraint_builder", "io", "integrator"]
+
+
+def _project_output_dir(results_dir: Path, project_name: str) -> Path:
+    """Return a direct child of results_dir, even if model validation was bypassed."""
+    name_path = Path(project_name)
+    project_dir = results_dir / project_name
+    if (
+        name_path.is_absolute()
+        or name_path.name != project_name
+        or project_name in {".", ".."}
+        or project_dir.resolve().parent != results_dir.resolve()
+    ):
+        raise ValueError(f"refusing to write unsafe project name: {project_name!r}")
+    return project_dir
 
 
 def _write_manifest(manifest: ProjectManifest, out_dir: Path) -> None:
@@ -79,8 +98,8 @@ def run_problem(
     container_name: str,
     log_dir: Path,
     results_dir: Path,
-    caller_factory: Callable,
-    max_fix_iterations: int = 5,
+    caller_factory: AgentCallerFactory,
+    max_fix_iterations: int = 2,
     enable_docker_validation: bool = True,
     serve: bool = False,
     enable_user_validation: bool = False,
@@ -125,27 +144,32 @@ def run_problem(
     )
 
     caller = caller_factory(log_dir, log)
+    fix_attempts: list[FixAttempt] = []
+    error_phases: list[str] = []
 
     try:
         raw_problem = input_file.read_text(encoding="utf-8")
+        context = IntentContext(raw_problem)
         log.info("pipeline_start", problem=problem_file)
         pipeline_start = time.time()
 
         # 1) Parser: raw text → ProblemSpec
-        parser_raw = caller.call("parser", raw_problem)
-        problem_spec = ProblemSpec.model_validate_json(parser_raw)
+        problem_spec = caller.call_typed("parser", raw_problem, ProblemSpec)
         log.info("parser_complete", problem_type=problem_spec.problem_type)
 
         # 1b) Optional user validation: review/correct ProblemSpec before generation
         if enable_user_validation:
-            problem_spec = run_user_validation_loop(caller, problem_spec, results_dir, log)
+            problem_spec = run_user_validation_loop(
+                caller, problem_spec, results_dir, log, context=context,
+            )
 
         # 2–5) Sequential generation stages
         manifest = ProjectManifest(projectName="", basePackage="", files=[])
 
         for agent in GENERATION_STAGES:
-            user_msg = _INPUT_BUILDERS[agent](problem_spec, manifest)
-            delta = caller.call_typed(agent, user_msg, Delta)
+            user_msg = json.dumps({**_INPUT_BUILDERS[agent](problem_spec, manifest), **context.fields()})
+            delta_type = ModelBuilderDelta if agent == "model_builder" else GenerationDelta
+            delta = caller.call_typed(agent, user_msg, delta_type)
             manifest = apply_delta(manifest, delta)
             log.info(
                 "stage_complete",
@@ -159,7 +183,6 @@ def run_problem(
         # Docker validation + fixer loop
         validation_start = time.time()
         fix_iterations = 0
-        error_phases: list[str] = []
         final_error_phase = "none"
         validation_success = True
 
@@ -172,13 +195,17 @@ def run_problem(
                 config=config,
                 container_name=container_name,
                 error_log_path=log_dir / "validation_errors.log",
+                intent=context,
             )
-            manifest, validation_success = controller.run(
-                problem_spec=problem_spec,
-                initial_manifest=manifest,
-            )
+            try:
+                manifest, validation_success = controller.run(
+                    problem_spec=problem_spec,
+                    initial_manifest=manifest,
+                )
+            finally:
+                fix_attempts = list(controller.fix_history)
+                error_phases = list(controller.error_phases)
             fix_iterations = len(controller.fix_history)
-            error_phases = [fa.error_phase for fa in controller.fix_history]
             if error_phases and not validation_success:
                 final_error_phase = error_phases[-1]
         else:
@@ -198,7 +225,7 @@ def run_problem(
                 "no project name was produced by the pipeline; refusing to write "
                 "output into the results root"
             )
-        project_dir = results_dir / manifest.project_name
+        project_dir = _project_output_dir(results_dir, manifest.project_name)
         _write_manifest(manifest, project_dir)
 
         # Emit Docker artifacts when --serve was requested AND the project actually
@@ -235,6 +262,7 @@ def run_problem(
             final_error_phase=final_error_phase,
             agent_times=caller.agent_times,
             agent_tokens=caller.agent_tokens,
+            fix_attempts=fix_attempts,
             error=None,
         )
 
@@ -251,10 +279,13 @@ def run_problem(
             total_time_s=total_time_s,
             pipeline_time_s=sum(caller.agent_times.values()),
             validation_time_s=0.0,
-            fix_iterations=0,
-            error_phases=[],
+            fix_iterations=len(fix_attempts),
+            error_phases=error_phases,
             final_error_phase="crash",
             agent_times=caller.agent_times,
             agent_tokens=caller.agent_tokens,
+            fix_attempts=fix_attempts,
             error=error_msg,
         )
+    finally:
+        caller.close()

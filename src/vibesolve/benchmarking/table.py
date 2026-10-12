@@ -41,6 +41,8 @@ def derive_light_columns(result: ProblemResult) -> tuple[bool, bool]:
     if result.success:
         return True, True
     phase = result.final_error_phase or ""
+    if phase not in {"compilation", "runtime", "test"}:
+        return False, False  # A generation/provider crash proves neither gate.
     compiles = phase != "compilation"
     solver_runs = phase not in ("compilation", "runtime")
     return compiles, solver_runs
@@ -110,6 +112,7 @@ def render_benchmark_table(
 
     title = "Total:"
     lines = [title, header, "-" * len(header), row]
+    lines.append("Cost is an API-equivalent catalog estimate, not a subscription bill.")
 
     if not full:
         lines.append("")

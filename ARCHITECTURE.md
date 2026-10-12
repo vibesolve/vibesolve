@@ -1,144 +1,93 @@
-# Architecture & Internals
+# Architecture
+
+VibeSolve is a Python pipeline that generates Java projects. Python builds the
+prompts, selects models and validates the results. Pi makes model calls and
+reports usage; see [PI_CALLER.md](PI_CALLER.md).
 
 ## Pipeline
 
-Seven specialized agents run in sequence. Each one owns a single concern and passes a growing project manifest to the next stage.
-
-```
-user_input/*.txt
-       │
-       ▼
-   [Parser]  ──────────────────────────────► ProblemSpec JSON
-       │
-       ▼  (--user-validate only)
-[User Validator] ─────────────────────────► reviewed / corrected ProblemSpec
-  (explain → review → update loop)
-       │
-       ▼
-[Model Builder] ──────────────────────────► domain classes + skeleton pom.xml
-       │
-       ▼
-[Constraint Builder] ─────────────────────► ConstraintProvider
-       │
-       ▼
-   [IO Agent] ───────────────────────────► JsonIO + DataGenerator
-       │
-       ▼
-  [Integrator] ─────────────────────────► Main, REST resource, solverConfig, tests, pom.xml
-       │
-       ▼
-  [Reviewer]  (optional pre-flight review)
-       │
-       ▼
-  Docker validate  ──────────────────────► mvn compile  +  mvn exec:java
-       │                    │
-     PASS                 FAIL
-       │                    │
-       ▼              [Fixer] ◄── ValidationError + error history
-  Final project        │
-                       └──► Docker validate  (up to N iterations)
+```text
+Original request → Parser → ProblemSpec
+                             │
+                 Optional user review/corrections
+                             │
+                 Model Builder → Constraint Builder → IO → Integrator
+                             │         Deltas accumulate in ProjectManifest
+                          Reviewer
+                             │
+                  Docker: compile → Main → tests
+                             │
+                 PASS ───────┴─────── FAIL
+                   │                    │
+             Write project       IO-model repair, then fixer
+             and reports          └─ merge Delta → revalidate
 ```
 
-Each agent outputs only the files it added or modified (a **delta**). The orchestrator merges deltas into a single accumulated manifest, so agents never waste tokens echoing back unchanged files.
-
-### Agent responsibilities
-
-| Agent | Input | Produces |
-|---|---|---|
-| **Parser** | Free-text problem description | `ProblemSpec` JSON |
-| **User Validator — Explain** _(optional)_ | `ProblemSpec` | Plain-language markdown summary for user review |
-| **User Validator — Update** _(optional, per feedback round)_ | `ProblemSpec` + user feedback | Corrected `ProblemSpec` |
-| **Model Builder** | `ProblemSpec` | Java domain classes + skeleton `pom.xml` |
-| **Constraint Builder** | `ProblemSpec` + manifest | `ConstraintProvider` implementation |
-| **IO Agent** | `ProblemSpec` + manifest | `JsonIO` + `DataGenerator` classes |
-| **Integrator** | `ProblemSpec` + manifest | `Main`, REST resource, `solverConfig.xml`, tests, complete `pom.xml` |
-| **Reviewer** | `ProblemSpec` + manifest | Pre-flight fixes (imports, annotations, dependencies) |
-| **Fixer** | `ProblemSpec` + manifest + `ValidationError` | Targeted fixes for compile / runtime / test errors |
-
----
-
-## Repository structure
-
-```
-agents_arch/
-├── src/
-│   └── vibesolve/
-│       ├── agents/
-│       │   ├── client.py              # AgentCaller — provider-agnostic OpenAI + Anthropic wrapper
-│       │   └── prompts.py             # Prompt file loader
-│       ├── benchmarking/
-│       │   ├── evaluator.py           # Docker benchmark stages (package, Quarkus boot, endpoint probe, Docker build)
-│       │   └── table.py               # derive Compiles/Solver metrics + render benchmark table
-│       ├── cli/
-│       │   ├── main.py                # vibesolve entry point (run/batch subcommands)
-│       │   ├── run_single.py          # `vibesolve run` command
-│       │   ├── run_batch.py           # `vibesolve batch` command (always benchmarks)
-│       ├── config/
-│       │   └── settings.py            # AppSettings (pydantic-settings)
-│       ├── models/
-│       │   ├── domain.py              # ProblemSpec, ProjectManifest, Delta, FileEntry
-│       │   └── results.py             # ValidationResult, ProblemResult, BatchSummary
-│       ├── packaging.py               # emit_docker_artifacts() — Dockerfile + docker-run.sh for --serve
-│       ├── pipeline/
-│       │   ├── runner.py              # run_problem() — orchestrator
-│       │   └── user_validator.py      # run_user_validation_loop() — explain/update loop
-│       ├── prompts/                   # Agent system prompt .txt files
-│       ├── reporting/
-│       │   └── kpi_tracker.py         # aggregate_results, generate_report
-│       ├── utils/
-│       │   ├── logging_config.py      # structlog setup + per-run BoundLogger
-│       │   └── patch_utils.py         # apply_delta (Delta → ProjectManifest merge)
-│       └── validation/
-│           ├── container_pool.py      # DockerContainerPool for parallel batch runs
-│           ├── docker_validator.py    # DockerValidator — compile/run/test in container
-│           └── feedback_controller.py # Reviewer → validate → fix loop
-├── docker/
-│   ├── Dockerfile                     # eclipse-temurin:17-jdk-jammy + Maven
-│   └── pom-warmup.xml                 # Pre-bakes Maven deps into the validator image (auto-built on first use)
-├── docs/                              # Architecture and internals documentation
-├── user_input/                        # Problem description .txt files
-├── pyproject.toml                     # Package metadata + CLI entry points
-└── .env.local                         # OPENAI_API_KEY / ANTHROPIC_API_KEY (not committed)
-```
-
-### Import topology (no cycles)
-
-```
-models ← utils ← agents ← validation ← pipeline ← cli
-config ──────────────────────────────────────────► cli
-benchmarking ─────────────────────────────────────► cli
-```
-
----
-
-## Key design decisions
-
-| Decision | Rationale |
+| Role | Responsibility / output |
 |---|---|
-| **Delta-based output** | Agents return only changed files, not the full manifest. Saves 60–80% of output tokens on later pipeline stages. |
-| **Typed Pydantic models** | All inter-agent data (`ProblemSpec`, `ProjectManifest`, `Delta`) is validated at parse time — no `dict[str, Any]` at boundaries. |
-| **Provider-agnostic agent caller** | A common `BaseAgentCaller` interface fronts both OpenAI (Responses API) and Anthropic (Messages API); `--provider` selects the implementation. Per-agent reasoning effort maps to OpenAI `reasoning.effort` or the Anthropic extended-thinking budget. |
-| **Structured JSON output** | Agents return guaranteed-valid JSON (OpenAI `json_object` mode), so no regex extraction is needed. |
-| **Persistent Docker container** | The validator container stays running between iterations, keeping the Maven cache warm. Cold start ~30 s; subsequent compiles ~5–10 s. |
-| **Incremental Maven compile** | `mvn clean` is skipped when only `.java` files changed (not `pom.xml`), cutting iteration time significantly. |
-| **Selective file injection** | The fixer receives only files referenced in the error output, not the entire manifest, keeping context small. |
-| **structlog with bound context** | Per-worker structured logs tagged by `problem` and `worker` — essential when parallel workers produce interleaved output. |
+| Parser | Convert the original request into `ProblemSpec`. |
+| User Validator — Explain / Update | Explain the spec using `UserValidationExplanation`; apply explicit feedback to a corrected `ProblemSpec`. Optional, interactive. |
+| Model Builder | Domain classes, `DataGenerator`, skeleton `pom.xml`. |
+| Constraint Builder | `ConstraintProvider` implementation. |
+| IO | `JsonIO` and necessary serialization annotations. |
+| Integrator | Standalone `Main`, Quarkus REST resource, solver configs, tests and complete `pom.xml`. |
+| Reviewer | Check and fix code before Docker validation. |
+| Fixer / cheap repair | Targeted changes for compilation, execution or test failures. |
 
----
+Generation, reviewer and fixer roles return `Delta`, not whole projects.
+`utils.patch_utils.apply_delta` is the only merge operation. Parser and optional
+user-validation roles return the typed results listed above instead.
 
-## Generated project stack
+## Context and repair
 
-Every generated project uses:
+Every non-parser role receives `OriginalRequest` and ordered, exact
+`UserClarifications` alongside the derived spec. Explicit corrections override
+conflicting original requirements; unchanged requirements override inconsistent
+spec details. Truncating repair diagnostics does not truncate this context.
 
-- **Timefold Solver 1.31.0** — constraint solving engine
-- **Quarkus 3.31.2** — runtime with REST endpoints under `/api/*` (`/api/solve`, `/api/solution/{jobId}`, `/api/status/{jobId}`, `/api/stop/{jobId}`, …)
-- **Java 17** — via `eclipse-temurin:17-jdk-jammy` in Docker
-- **Maven** — build system; validated via `mvn compile` + `mvn exec:java`
-- **HardSoftScore** — default scoring; 15-second solver termination
+Reviewer runs before Docker by default. After a validation failure, attempt one
+uses the IO model (`fixer_cheap`); subsequent attempts use the fixer model. The
+default total is two attempts, including no-ops. Only file changes trigger
+revalidation. If a model call fails after its retries, repair stops. `FixAttempt`
+and run/batch reports record the models used, outcomes and usage.
 
----
+For compilation errors, the fixer receives compiler-mentioned files, `pom.xml`
+and domain declarations. `ProjectFiles` lists every path so omitted contents
+are not mistaken for missing files. If no compiler paths can be identified, or
+the failure is in execution/tests, it receives the full manifest.
 
-## Benchmarking & containerization
+## Validation and output
 
-- **`vibesolve batch` always benchmarks.** After a batch completes, every project is scored on two kinds of columns: those derived straight from the pipeline's own results (*Compiles · Solver runs · Cost · Tokens*) and those measured by building each project, starting the app, and calling its endpoints (*Quarkus runs · Endpoints work · Docker works*). Code lives in `benchmarking/` (`evaluator.py` = Docker stages, `table.py` = derivation + rendering).
-- **`--serve` containerizes a generated project.** On success, `packaging.py` emits a `Dockerfile`, `.dockerignore`, and `docker-run.sh` into the project so it can be built and run standalone. The "Docker works" benchmark column builds this `Dockerfile`, so it only scores non-zero when `--serve` is set.
+`DockerValidator` keeps a persistent container to reuse Maven dependencies.
+Batch runs allocate a container pool. Validation runs:
+
+1. `mvn [clean] compile`; later iterations skip `clean` when the POM is unchanged.
+2. `mvn exec:java` under a 30-second timeout; timeout exit 124 counts as a pass.
+3. `mvn test`; tests must pass.
+
+REST and standalone JSON round trips are checked by generated tests, not by a
+separate validator. Their coverage depends on what the model generates.
+
+Successful projects are extracted and zipped under `results/run_<timestamp>/`;
+logs and raw responses go under `logs/run_<timestamp>/`. Batch runs use
+`batch_<timestamp>/<problem>/` and aggregate summaries. Single-run
+`RunResult.json` records outcomes and usage. `--serve` also emits portable Docker
+artifacts via `packaging.py`.
+
+With validation enabled, `batch` adds a serial benchmark pass: compile/solver
+metrics and usage come from pipeline results; Quarkus startup, endpoints and
+Docker builds are checked separately by `benchmarking/`. The Docker build
+column needs `--serve`. `--no-validation-loop` skips this benchmark table.
+
+## Source map
+
+- `models/`: Pydantic contracts; `config/`: settings and bundled model profiles.
+- `agents/` and `pi_worker/`: typed caller, private transport and SDK completions.
+- `prompts/`: role behavior and shared intent/API notes.
+- `pipeline/`: stage orchestration and optional user review.
+- `validation/`: reviewer/repair policy and Docker checks.
+- `cli/`, `reporting/`, `benchmarking/`: commands, usage aggregation and probes.
+
+Paths above are relative to `src/vibesolve/`. Generated-stack invariants and
+editing rules are in [AGENTS.md](AGENTS.md); contributor checks are in
+[CONTRIBUTING.md](CONTRIBUTING.md).

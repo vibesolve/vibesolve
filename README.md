@@ -4,103 +4,86 @@
 
 # VibeSolve
 
-Describe an optimization problem in plain English. Get a complete, runnable [Timefold Solver](https://timefold.ai/) project (Java domain model, constraints, REST API, tests, and solver config), automatically validated by Docker.
+Describe an optimization problem in plain English. Generate a
+[Timefold Solver](https://timefold.ai/) Quarkus project with Java domain classes,
+constraints, REST endpoints, tests and solver configuration, validated in Docker.
 
-> I have a school timetabling problem with teachers, classes, lessons, rooms and a 1-week grid. Schedule all lessons such that no teacher teaches 2 lessons at the same time, no room hosts 2 lessons at the same time, and lessons for the same class group are spread across the week (1 per day).
-
-→ Ready-to-build Quarkus + Timefold Solver Maven project.
+> Schedule lessons across rooms and timeslots so teachers, students and rooms
+> never have overlapping lessons, and each class's lessons are spread across
+> the week.
 
 ## Setup
 
-```bash
-# Install uv (skip if you already have it)
-curl -LsSf https://astral.sh/uv/install.sh | sh          # macOS / Linux
-# Windows (PowerShell): powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+Install [uv](https://docs.astral.sh/uv/), Node >=22.19 with npm, and Docker.
+Python 3.11+ is required; uv can install a suitable interpreter.
 
+```bash
 git clone https://github.com/vibesolve/vibesolve.git
 cd vibesolve
-
-uv sync                      # creates .venv/ and installs vibesolve
-source .venv/bin/activate    # Windows: .venv\Scripts\activate
-
-# API key - gitignored, never committed
+uv sync
 cp .env.example .env.local
-# now open .env.local and set OPENAI_API_KEY=sk-...
+# Open .env.local and set provider credentials, e.g. OPENAI_API_KEY.
 ```
 
-With the environment activated, `vibesolve` is on your `PATH` — no prefix needed. Activation lasts for the shell session; in a fresh shell either re-run `source .venv/bin/activate` or prefix a one-off command with `uv run` (e.g. `uv run vibesolve run`).
+Keep credentials out of Git and `config.yaml`. The default provider is `openai`.
+VibeSolve installs its Pi worker on first use. To use an existing Pi Codex login,
+pass `--provider openai-codex` and leave `VIBESOLVE_API_KEY` empty.
+See [PI_CALLER.md](PI_CALLER.md) for provider setup.
+
+Start Docker before running with validation. On Linux, use
+`sudo systemctl start docker`; on macOS/Windows, launch Docker Desktop. The
+validator image builds automatically on first use.
 
 ## Usage
 
-Start Docker on your machine: Linux run `sudo systemctl start docker`, macOS or Windows launch Docker Desktop.
-
 ```bash
-vibesolve --help
+uv run vibesolve run                              # bundled timetable example
+uv run vibesolve run user_input/my-problem.txt     # your own problem
+uv run vibesolve run --user-validate               # review/correct the parsed spec
+uv run vibesolve run --serve                       # also emit portable Docker artifacts
+uv run vibesolve batch --workers 3                 # all user_input/*.txt
 ```
 
-Solve the bundled school-timetabling example:
+For Google, set `GEMINI_API_KEY` in `.env.local`, then run
+`uv run vibesolve run --provider google`. Other provider configuration and model
+selection are covered in [PI_CALLER.md](PI_CALLER.md#configuration).
 
-```bash
-vibesolve run
-```
+Run `uv run vibesolve run --help` or `uv run vibesolve batch --help` for all
+options. If you prefer plain `vibesolve` commands, activate the environment with
+`source .venv/bin/activate` (Windows: `.venv\Scripts\activate`).
 
-Solve your own problem file:
-
-```bash
-vibesolve run user_input/my-problem.txt
-```
-
-Solve every `*.txt` in `user_input/`, in parallel:
-
-```bash
-vibesolve batch
-```
-
-### Common flags
-
-Also emit a Dockerfile and `docker-run.sh` next to the generated project:
-
-```bash
-vibesolve run --serve
-```
-
-Review the parsed spec before code generation begins:
-
-```bash
-vibesolve run --user-validate
-```
-
-Run a batch with more parallel workers (default 3):
-
-```bash
-vibesolve batch --workers 5
-```
-
-Run `vibesolve --help` for the full list, or see the [CLI reference](CONTRIBUTING.md#cli-reference). Generated projects land in `results/run_<timestamp>/`. Structured logs in `logs/run_<timestamp>/`.
+Single-run artifacts land in `results/run_<timestamp>/`, including the project
+directory and zip; logs go in `logs/run_<timestamp>/`. Batch runs use
+`batch_<timestamp>/<problem>/` and include aggregate summaries.
+With `--serve`, run `./docker-run.sh` inside the generated project to serve it.
 
 ## Configuration
 
-Settings live in `config.yaml` at the project root, loaded automatically. Pass `--config other.yaml` to use a different file. CLI flags override it. API keys stay in `.env.local`.
+The root `config.yaml` loads automatically; `--config other.yaml` selects another
+file. Precedence is CLI > environment > YAML > `.env.local` > bundled defaults.
+Set role-specific models and effort under `provider_models`; use `_default` for
+a provider-wide override. See the [default models](src/vibesolve/config/provider_models.json)
+and [configuration examples](PI_CALLER.md#configuration).
 
-## Prerequisites
-
-| Requirement | Notes |
-|---|---|
-| [uv](https://docs.astral.sh/uv/) | manages the environment and installs Python if needed |
-| Python 3.11+ | `uv sync` installs a suitable version automatically |
-| Docker 20+ | for automated validation; skippable with `--no-validation-loop` |
-| LLM API key | OpenAI ([get one](https://platform.openai.com/api-keys)), or an Anthropic key for `--provider claude` |
+Repair uses the IO model first, then the fixer, with two total attempts by
+default (`--max-iterations` overrides this). Reported costs are Pi catalog
+estimates, not invoices or subscription charges.
 
 ## How it works
 
-A pipeline of specialized LLM agents (Parser → Model Builder → Constraint Builder → IO → Integrator → Reviewer → Fixer) builds the project step by step, then compiles and runs it in Docker. If it fails, the Fixer agent corrects it and retries.
+Parser → optional user review → Model Builder → Constraint Builder → IO →
+Integrator → Reviewer → Docker validation → repairs if needed.
+Python carries the original request and exact corrections through every later
+role. Pi makes the model calls.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the pipeline diagram, agent responsibilities, and design decisions.
+Validation checks compilation, standalone solver execution and tests.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the pipeline and batch benchmarks.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, code style, and the PR workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development checks and review guidance.
+For security reports and credential handling, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE) - free to use, modify, and distribute.
+[MIT](LICENSE).
